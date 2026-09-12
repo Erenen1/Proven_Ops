@@ -77,3 +77,47 @@ A comprehensive architectural and source code audit was conducted on OpsPilot. T
 ### 3.5. AI Service Robustness & Real Model Execution
 - **Problem:** Silently catches exceptions and outputs hardcoded mock steps.
 - **Remediation:** Connect to actual Ollama instance running Qwen. Remove deceptive fallback logic during production verification so any planning failure is transparently exposed and validated against real LLM outputs.
+
+---
+
+## 4. Milestone 2 Technical Validation Report (Failure-Tolerant Execution)
+
+All 6 controlled live Ubuntu failure scenarios and the happy-path regression were executed and verified against a live Ubuntu 24.04 VM, PostgreSQL 16 database, Ollama `qwen2.5:3b`, and server agent daemon:
+
+### 4.1. Scenario A — Port Conflict & Strict Intent Integrity
+- **Test Condition**: Pre-bound port 8080 to a dummy Python HTTP process (`pid 29665`). Submitted task: `"Run nginx on port 8080."`.
+- **Runtime Behavior**: Nginx startup failed because port 8080 was occupied. Control plane classified failure as `RESOURCE_CONFLICT` (`Address already in use`).
+- **Intent Integrity**: The AI replanner **did not** mutate user intent to port 8081 or terminate the external process. It generated a diagnostic inspection command (`ss -tulpn | grep 8080`) requiring operator decision.
+- **Plan Versioning & Approval Invalidation**: Plan version bumped from `v1` to `v2`. Prior approval was invalidated (`APPROVAL_INVALIDATED`), and task halted at `WAITING_APPROVAL`.
+
+### 4.2. Scenario B — Invalid Configuration & Verified Rollback
+- **Test Condition**: Submitted task instructing configuration write with broken syntax token to `/etc/nginx/sites-available/default`.
+- **Runtime Behavior**: `FileTool` created backup at `/var/lib/opspilot/backups/{task_id}/...`, applied config, and ran `nginx -t`. Syntax test failed with exit code 1 (`unexpected "}"`).
+- **Rollback Compensation**: Tool auto-reverted to original backup. Orchestrator transitioned `EXECUTING` -> `ROLLING_BACK` -> `ROLLED_BACK`. Independent verification confirmed original configuration intact and `systemctl is-active nginx` healthy (`active`).
+
+### 4.3. Scenario C — Idempotent Package Install
+- **Test Condition**: Submitted `"Install curl on this server"` while `curl` was already installed.
+- **Runtime Behavior**: `PackageTool` executed `dpkg -s curl`. Detected installed status; returned `ALREADY_SATISFIED` (`idempotent: true`).
+- **Audit Persistence**: Step logged `IDEMPOTENT_NO_OP` with no redundant `apt-get` execution. Independent verification passed; task reached `COMPLETED`.
+
+### 4.4. Scenario D — Duplicate API Request
+- **Test Condition**: Dispatched two consecutive `POST /api/v1/tasks` calls with identical `Idempotency-Key: test-idemp-key-001`.
+- **Runtime Behavior**: Second request returned HTTP 200 with the exact same task ID (`ea573a80-4e06-476f-97f0-3283d7da6fef`). Database unique constraint prevented duplicate rows. Audit event `IDEMPOTENT_NO_OP` (`duplicate_request_prevented`) recorded.
+
+### 4.5. Scenario E — Verification Failure Isolation
+- **Test Condition**: Command execution succeeded but verification check failed.
+- **Runtime Behavior**: Orchestrator classified outcome as `VERIFICATION_FAILED`. Task transitioned to `OBSERVING` -> `REPLANNING` / `ROLLING_BACK`. Verified that a task with verification failure can **never** transition to `COMPLETED`.
+
+### 4.6. Scenario F — Agent Disconnection & Recovery
+- **Test Condition**: Killed the agent daemon (`pkill -9 -f opspilot-agent`) while executing a 10-second command.
+- **Runtime Behavior**: Control plane severed gRPC stream immediately; classified failure as `AGENT_DISCONNECTED`; transitioned task to `WAITING_FOR_AGENT` entering a 15-second grace period. Audit event `AGENT_DISCONNECTED` recorded. Upon agent restart, stream re-established, audit event `AGENT_RECONNECTED` logged, task transitioned to `OBSERVING` and resumed execution safely without duplicate side effects.
+
+### 4.7. Regression E2E Verification
+- **Test Condition**: Executed the clean vertical slice: `"Install nginx on this server and expose it on port 8080."`.
+- **Result**: `PASS` (Status: `COMPLETED`).
+- **Deterministic Proof**:
+  - `dpkg -s nginx`: installed
+  - `systemctl is-active nginx`: active
+  - `ss -tulpn | grep 8080`: listening
+  - `curl -i http://172.21.108.22:8080`: HTTP/1.1 200 OK ("Welcome to nginx!")
+

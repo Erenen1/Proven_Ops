@@ -3,30 +3,25 @@
 Last Updated: 2026-09-12
 
 ## Current Focus
-Validating and hardening OpsPilot against a real Ubuntu host environment. Full vertical slice validation completed and verified end-to-end.
+Milestone 2 (Failure-Tolerant Agent Execution) completed and proven on Ubuntu 24.04 with PostgreSQL persistence, real Ollama planning, mTLS agent communication, and deterministic verification.
 
 ## Completed
-- **Live Ubuntu Vertical Slice Verified**: End-to-end flow passed on Ubuntu 24.04 with live Ollama `qwen2.5:3b`, PostgreSQL 16, and real Server Agent daemon:
-  - Task creation (`POST /api/v1/tasks`)
-  - Agent host discovery (`DISCOVERING`)
-  - AI Plan generation via Ollama (`PLANNING`)
-  - Policy & Risk evaluation -> `WAITING_APPROVAL`
-  - Operator approval (`POST /api/v1/tasks/{id}/approve`)
-  - Real execution (`EXECUTING`): `apt-get install -y nginx`, configure `/etc/nginx/sites-available/default` for port 8080, `systemctl restart nginx`
-  - Deterministic verification (`VERIFYING`): `package_installed` (dpkg), `systemd_active` (systemd), `tcp_port_open` (socket probe on 8080), `http_probe` (HTTP 200)
-  - `COMPLETED` state and PostgreSQL `audit_events` persistence.
-- **Production PostgreSQL Store**: Implemented `PostgresStore` (`apps/control-plane/internal/database/postgres.go`) using `pgxpool.Pool` with fail-fast in production mode.
-- **True Mutual TLS (mTLS)**: Implemented ECDSA P-256 PKI, client/server certificate generation, strict `RequireAndVerifyClientCert` enforcement, and rejection test (`apps/control-plane/internal/pki/mtls_test.go`).
-- **Deterministic Verification Engine**: Implemented `executeVerification` in orchestrator with actual agent tools and network probes.
-- **Agent Real Metrics**: Fixed dummy metrics in `collector.go` to parse `/proc/loadavg` and `/proc/meminfo`.
-- **Documentation & Reality Hardening**: `VALIDATION_REPORT.md` and `E2E_TEST.md` created; downgraded prompt injection claims to defense-in-depth boundary; clarified offline nature of benchmark suite.
+- **Milestone 2 (Failure-Tolerant Execution) Verified on Ubuntu 24.04**:
+  - **Structured Failure Classification**: 12 failure types implemented and unit tested (100% pass).
+  - **Bounded Controlled Replanning**: `MAX_REPLANS = 3`, `plan_version` incrementing, approval invalidation upon plan mutation, strict intent integrity (no silent port alterations).
+  - **Transactional Config & Verified Rollback**: Pre-flight backup (`/var/lib/opspilot/backups/{task_id}/`), in-tool atomic syntax validation (`nginx -t`), auto-revert, state machine transitions (`ROLLING_BACK` -> `ROLLED_BACK`), and independent state verification.
+  - **Multi-Tier Idempotency**: API `Idempotency-Key` header with PostgreSQL unique constraint; Agent step execution cache (`execution_id = task_id/step_id/attempt`); tool pre-checks returning `ALREADY_SATISFIED` (`IDEMPOTENT_NO_OP` recorded in audit trail).
+  - **Agent Disconnect Recovery**: Mid-execution stream disconnect transitions to `WAITING_FOR_AGENT` with grace period; reconnect re-observes and resumes safely without duplicate side effects.
+  - **Comprehensive Audit Events**: `TASK_CREATED`, `APPROVAL_GRANTED`, `APPROVAL_INVALIDATED`, `STEP_FAILED`, `RETRY_ATTEMPTED`, `REPLAN_REQUESTED`, `REPLAN_GENERATED`, `PLAN_VERSION_CHANGED`, `ROLLBACK_STARTED`, `ROLLBACK_COMPLETED`, `IDEMPOTENT_NO_OP`, `AGENT_DISCONNECTED`, `AGENT_RECONNECTED`, `VERIFICATION_FAILED`.
+  - **Zero Regressions**: Original vertical slice ("Install nginx on this server and expose it on port 8080.") verified end-to-end with HTTP 200 pass.
+- **Milestone 1 (Vertical Slice)**: Live Ubuntu 24.04 vertical slice verified with mTLS, PostgreSQL store, Ollama Qwen planning, and deterministic verification.
 
 ## In Progress
-- Completing session handoff and reporting findings.
+- Finalizing Milestone 2 technical validation report and session handoff.
 
 ## Next
-1. Add automated VM integration tests to GitHub Actions pipeline.
-2. Build UI test harness for Dashboard verification against live backend.
+1. Add automated VM integration test scripts to CI pipeline.
+2. Build UI test harness for Dashboard verification against live backend failure states.
 
 ## Blocked
 - None. All components build and pass unit tests.

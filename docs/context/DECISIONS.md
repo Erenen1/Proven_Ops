@@ -69,3 +69,36 @@
 - **Decision**: Encapsulate all host logs, stdout, and stderr inside `<UNTRUSTED_OBSERVATION>` tags in AI prompts.
 - **Reason**: Instructs the model that observation data is inert diagnostic evidence, never executable instructions.
 - **Consequences**: Neutralizes indirect prompt injection attacks.
+
+## ADR-009 — Structured Failure Taxonomy & Anti-Side-Effect Retry Policy
+- **Status**: Active
+- **Date**: 2026-09-12
+- **Context**: Unstructured string error handling and blind automatic retries of mutating commands risk compounding infrastructure outages.
+- **Decision**: Classify all operational failures into a strict 12-type `StructuredFailure` enum. Prohibit retries of side-effect operations (`install_package`, `write_config_file`, `restart_service`); restrict retries to read-only queries and transient network timeouts with exponential backoff.
+- **Reason**: Guarantees deterministic failure classification and prevents dangerous duplicate execution.
+- **Consequences**: High operational safety; all retry attempts recorded in audit logs.
+
+## ADR-010 — Bounded Replanning with Strict Intent Integrity and Plan Versioning
+- **Status**: Active
+- **Date**: 2026-09-12
+- **Context**: Agentic loops without boundaries can enter infinite execution cycles or silently mutate user intent (e.g. switching requested port 8080 to 8081).
+- **Decision**: Impose `MAX_REPLANS = 3`. Require `plan_version` increments on every replan cycle. Mandate that replans introducing modifying or elevated risk actions invalidate prior operator approvals and transition to `WAITING_APPROVAL`. Enforce prompt and schema constraints forbidding silent intent drift.
+- **Reason**: Bounded execution avoids infinite loops; operator approval gates protect intent boundaries.
+- **Consequences**: Deterministic replanning with strict human-in-the-loop oversight.
+
+## ADR-011 — Transactional Configuration Writes and Verified Rollback Compensation
+- **Status**: Active
+- **Date**: 2026-09-12
+- **Context**: Applying an invalid server configuration can bring down active production services.
+- **Decision**: Implement pre-flight backup to `/var/lib/opspilot/backups/{task_id}/`, run in-tool atomic validation (`nginx -t`), and auto-revert on syntax failure. For execution-level rollback, transition task state machine to `ROLLING_BACK`, restore configuration, restart affected services, independently verify service health, and transition to `ROLLED_BACK`.
+- **Reason**: Restores verified system health even when planned actions fail.
+- **Consequences**: Zero downtime on syntax error; verified state restoration.
+
+## ADR-012 — Multi-Tier Idempotency (API Header, Step Execution Cache, Tool Pre-Checks)
+- **Status**: Active
+- **Date**: 2026-09-12
+- **Context**: Network retries at the client or agent communication level can lead to duplicate task creation or redundant side effects.
+- **Decision**: Support `Idempotency-Key` HTTP header with PostgreSQL unique constraint; generate `execution_id` (`task_id/step_id/attempt`) for agent step execution cache (`sync.Map`); implement pre-checks in tools (`dpkg -s`, SHA256 content comparison, `systemctl is-active`) returning `ALREADY_SATISFIED`.
+- **Reason**: Prevents redundant infrastructure mutations and guarantees idempotent API behavior.
+- **Consequences**: Eliminates side-effect duplication and logs `IDEMPOTENT_NO_OP` events.
+
