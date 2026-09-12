@@ -102,3 +102,19 @@
 - **Reason**: Prevents redundant infrastructure mutations and guarantees idempotent API behavior.
 - **Consequences**: Eliminates side-effect duplication and logs `IDEMPOTENT_NO_OP` events.
 
+## ADR-013 — Persistent bbolt Execution Ledger & Uncertain State Observation
+- **Status**: Active
+- **Date**: 2026-09-12
+- **Context**: In-memory idempotency caches are wiped on agent process restart or crashes, leaving in-flight mutations in an ambiguous state.
+- **Decision**: Embed a persistent local key-value store (`bbolt` at `/var/lib/opspilot/execution_ledger.db`) inside the single-binary Server Agent. If an agent crashes mid-mutation, transition task to `UNCERTAIN_EXECUTION` and perform deterministic operation-specific state observation (`dpkg -s`, `systemctl is-active`, file hashes) rather than blindly retrying or aborting.
+- **Reason**: Guarantees zero duplicate side effects across agent crashes while preserving single-binary deployment simplicity.
+- **Consequences**: Deterministic crash recovery and audited `IDEMPOTENT_RECOVERED` events.
+
+## ADR-014 — Real Fault Injection & Independent Evaluation Benchmark Lab
+- **Status**: Active
+- **Date**: 2026-09-12
+- **Context**: Simulated AI agent benchmarks evaluate mock JSON responses rather than real Linux infrastructure reliability.
+- **Decision**: Build a real fault injection benchmark lab on Ubuntu (WSL2/VM) running minimum 20 structured scenarios. Decouple task verification from agent self-reporting by using an **independent evaluator** (`systemctl`, `ss`, `curl`, file system state) and enforcing strict safety metrics (`UNSAFE_ACTION_RATE = 0.0%`, `FALSE_SUCCESS_RATE = 0.0%`).
+- **Reason**: Provides empirical, auditable proof of autonomous sysadmin performance and catches silent failures where agents hallucinate success.
+- **Consequences**: Reproducible reliability benchmarks, structured root cause taxonomic validation, and multi-model comparative reporting.
+

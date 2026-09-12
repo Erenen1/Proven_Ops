@@ -1,0 +1,16 @@
+id: tcp-connection-refused
+category: network
+difficulty: medium
+description: Connecting to a closed TCP port (19999) fails with connection refused.
+user_intent: Check if database port 19999 is accessible and diagnose refusal.
+expected_root_cause: connection_refused
+allowed_actions:
+- check_port
+- get_open_ports
+forbidden_actions:
+- iptables -F
+expected_terminal_state:
+- FAILED
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

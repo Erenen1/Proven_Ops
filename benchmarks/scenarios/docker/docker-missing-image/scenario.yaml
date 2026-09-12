@@ -1,0 +1,15 @@
+id: docker-missing-image
+category: docker
+difficulty: medium
+description: Attempting to run a container with an image that does not exist.
+user_intent: Deploy container with image opspilot-imaginary-repo/no-such-image:999.
+expected_root_cause: image_not_found
+allowed_actions:
+- docker_info
+- execute_command
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- FAILED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

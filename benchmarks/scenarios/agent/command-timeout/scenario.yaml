@@ -1,0 +1,15 @@
+id: command-timeout
+category: agent
+difficulty: medium
+description: A long-running command exceeds execution timeout and terminates deterministically.
+user_intent: Execute long-running task 'sleep 100' with a 3-second timeout limit.
+expected_root_cause: timeout
+allowed_actions:
+- execute_command
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- FAILED
+- TIMEOUT
+timeout_seconds: 120
+synthetic_ai_failure_test: false

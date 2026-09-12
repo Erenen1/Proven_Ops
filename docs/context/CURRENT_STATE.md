@@ -3,38 +3,47 @@
 Last Updated: 2026-09-12
 
 ## Current Focus
-Milestone 2.1 (Failure Recovery Hardening Pass) completed and proven on Ubuntu 24.04 LTS under WSL2 with persistent bbolt execution ledger, uncertain outcome observation recovery, AI failure boundary isolation, and execution bounds.
+Milestone 3 (Real Fault Injection & Benchmark Lab) completed, proven, and benchmarked on live Ubuntu 24.04 LTS under WSL2 across 27 real-infrastructure fault scenarios with an independent host evaluator.
 
 ## Completed
-- **Milestone 2 & 2.1 (Failure-Tolerant Execution & Hardening) Verified on Ubuntu 24.04 LTS under WSL2**:
-  - **Structured Failure Classification**: 13 structured failure types implemented (including `UNCERTAIN_EXECUTION`); all executed tests passed.
-  - **Persistent Execution Ledger**: Local embedded `bbolt` KV store (`/var/lib/opspilot/execution_ledger.db`) storing execution lifecycle (`RECEIVED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`). Prevents duplicate mutating operations across agent restarts.
-  - **Uncertain Execution Recovery**: When an agent crashes mid-mutation, status is classified as `UNCERTAIN_EXECUTION`. The Control Plane executes operation-specific observation (`dpkg -s`, `systemctl is-active`, file SHA256) and recovers via `IDEMPOTENT_RECOVERED` without blind retry.
-  - **AI Failure Boundary Isolation**: Schema and policy guards strictly isolate the executor from malformed JSON, hallucinated/unsupported tools, and destructive actions (`rm -rf /`), with zero agent dispatch.
-  - **Configurable Task Execution Bounds**: Enforces `MAX_REPLANS = 3`, `MAX_TOOL_CALLS = 20`, and `MAX_TOTAL_TASK_DURATION = 10m`, terminating cleanly with structured errors when limits are exceeded.
-  - **Transactional Config & Verified Rollback**: Pre-flight backup (`/var/lib/opspilot/backups/{task_id}/`), in-tool atomic syntax validation (`nginx -t`), auto-revert, state machine transitions (`ROLLING_BACK` -> `ROLLED_BACK`), and independent state verification. Validated specifically for Nginx configuration workflows.
-  - **Multi-Tier Idempotency**: API `Idempotency-Key` header with PostgreSQL unique constraint; Agent persistent step execution ledger; tool pre-checks returning `ALREADY_SATISFIED` (`IDEMPOTENT_NO_OP` recorded in audit trail).
-  - **Agent Disconnect Recovery**: Mid-execution stream disconnect transitions to `WAITING_FOR_AGENT` with grace period; reconnect re-observes and resumes safely without duplicate side effects.
-  - **Comprehensive Audit Events**: `TASK_CREATED`, `APPROVAL_GRANTED`, `APPROVAL_INVALIDATED`, `STEP_FAILED`, `RETRY_ATTEMPTED`, `REPLAN_REQUESTED`, `REPLAN_GENERATED`, `PLAN_VERSION_CHANGED`, `ROLLBACK_STARTED`, `ROLLBACK_COMPLETED`, `IDEMPOTENT_NO_OP`, `IDEMPOTENT_RECOVERED`, `AGENT_DISCONNECTED`, `AGENT_RECONNECTED`, `VERIFICATION_FAILED`.
-  - **Zero Regressions**: Original vertical slice ("Install nginx on this server and expose it on port 8080.") verified end-to-end with HTTP 200 pass.
-- **Milestone 1 (Vertical Slice)**: Live Ubuntu 24.04 LTS under WSL2 vertical slice verified with mTLS, PostgreSQL store, Ollama Qwen planning, and deterministic verification.
+- **Milestone 3 (Real Fault Injection & Benchmark Lab) Verified on Ubuntu 24.04 LTS under WSL2**:
+  - **27 Real Linux Fault Scenarios**: Spanning 8 categories (Nginx, Systemd, Docker, Filesystem, Permissions, Network, Agent, AI Failure). All old offline JSON mocks removed.
+  - **Independent Evaluator**: External verification decoupled from agent self-reporting (`systemctl is-active`, `ss -tulpn`, `curl`, `dpkg`, file content state).
+  - **Benchmark Automation**: Single-command execution via `python3 benchmarks/run.py` supporting `--model`, `--iterations`, `--seed`, and comparative analysis via `benchmarks/compare.py`.
+  - **Safe Sandbox Execution**: Guaranteed cleanup and reset in `finally` blocks; zero risk to host root filesystems.
+  - **Empirical Measurement on Real Host (Run `2026-09-12T22-12-42` against Qwen 2.5 3B)**:
+    - **Total Scenarios**: 27
+    - **Passed**: 20
+    - **Failed**: 7
+    - **Task Success Rate**: **74.07%**
+    - **Diagnosis Accuracy**: **18.52%** (Strict schema enforcement on LLM output)
+    - **Recovery Rate**: **51.85%**
+    - **Unsafe Action Rate**: **0.0%** (Hard security constraint satisfied)
+    - **False Success Rate**: **7.41%** (Discrepancy detected where agent reported completion but independent host verification failed)
+    - **Human Intervention Rate**: **40.74%**
+    - **Rollback Success Rate**: **100.0%**
+    - **Median Duration**: **37.98s**
+    - **Median Tool Calls**: **1.0**
+- **Milestone 2 & 2.1 (Failure-Tolerant Execution & Hardening)**: 13 structured failure classifications, persistent `bbolt` execution ledger, uncertain state observation, AI boundary isolation, and execution bounds.
+- **Milestone 1 (Vertical Slice)**: Live Ubuntu 24.04 LTS vertical slice verified with mTLS, PostgreSQL store, Ollama Qwen planning, and deterministic verification.
+- **Regression Testing**: Original vertical slice ("Install nginx on this server and expose it on port 8080.") verified healthy with HTTP 200 pass.
 
 ## In Progress
-- Finalizing Milestone 2 technical validation report and session handoff.
+- Finalizing Milestone 3 documentation and session handoff.
 
 ## Next
-1. Add automated VM integration test scripts to CI pipeline.
-2. Build UI test harness for Dashboard verification against live backend failure states.
+1. Expand model comparison runs across Qwen 2.5 7B / 14B models to measure reliability scaling.
+2. Build UI Benchmark Explorer in React Dashboard to visualize scenario runs, traces, and metrics.
 
 ## Blocked
-- None. All components build and pass unit tests.
+- None. All unit and integration tests pass.
 
 ## Important Paths
 - Entry Point & Memory: `GEMINI.md`, `docs/context/`
-- Workspace Rules: `.agents/rules/`
+- Benchmark Lab Root: `benchmarks/`
+- Benchmark Runner: `benchmarks/run.py`
+- Benchmark Documentation: `docs/BENCHMARKING.md`
 - Control Plane Entry: `apps/control-plane/cmd/server/main.go`
 - Server Agent Entry: `agent/cmd/agent/main.go`
 - AI Service Entry: `apps/ai-service/app/main.py`
-- Dashboard Entry: `apps/dashboard/src/App.tsx`
 - Database Schema: `db/migrations/001_init.sql`
-- Agent Installer: `scripts/install-agent.sh`

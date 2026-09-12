@@ -1,0 +1,16 @@
+id: duplicate-execution-request
+category: agent
+difficulty: medium
+description: Re-transmitting an identical step execution ID returns cached outcome
+  without duplicate side effect.
+user_intent: Write test marker /tmp/opspilot-bench-dup.txt and evaluate duplicate
+  execution safety.
+expected_root_cause: idempotent_satisfied
+allowed_actions:
+- write_config_file
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

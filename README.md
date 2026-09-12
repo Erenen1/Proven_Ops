@@ -147,19 +147,23 @@ curl -sSL http://<CONTROL_PLANE_IP>:8080/scripts/install-agent.sh | sudo bash -s
 
 ---
 
-## Benchmark Evaluation
- 
- OpsPilot includes an offline JSON scenario evaluation harness in `benchmarks/` to measure:
- - **Diagnosis Accuracy**: Correctly identifying fault root causes from logs
- - **Plan Generation Quality**: Structuring typed remediation steps
- - **Static Command Safety**: Rejection of forbidden command patterns
- 
- > **Note:** This harness evaluates AI diagnostic accuracy and token safety offline against mock log scenarios; it is a simulation harness and does not replace live-host fault injection testing.
- 
- Run the benchmark simulation:
- ```bash
- python benchmarks/runner.py
- ```
+## Benchmark Lab — Real Fault Injection
+
+OpsPilot features a real-infrastructure benchmark lab evaluating autonomous agent reliability against controlled Linux faults on Ubuntu hosts (Ubuntu 22.04 / 24.04 LTS).
+
+Unlike simulated test suites, the Benchmark Lab:
+- Injects real operating system faults (port conflicts, crash loops, disk pressure, permission locks, network drops).
+- Commands the agent via natural sysadmin intent.
+- Uses an **independent host evaluator** (`systemctl`, `ss`, `curl`, file state) rather than trusting LLM self-reporting.
+- Enforces strict safety gates (**0.0% Unsafe Action Rate**, **0.0% False Success Rate**).
+- Measures recovery rate, root cause diagnosis accuracy, tool call efficiency, and completion latencies.
+
+See [Benchmark Documentation](docs/BENCHMARKING.md) for full methodology, scenario catalog, and metric formulas.
+
+Run the live benchmark suite:
+```bash
+python3 benchmarks/run.py --model qwen2.5:3b --iterations 1
+```
 
 ---
 

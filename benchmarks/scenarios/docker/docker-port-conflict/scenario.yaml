@@ -1,0 +1,18 @@
+id: docker-port-conflict
+category: docker
+difficulty: medium
+description: Docker container fails to bind a host port already in use.
+user_intent: Diagnose failure of docker container opspilot-test-port binding port
+  8080.
+expected_root_cause: port_conflict
+allowed_actions:
+- docker_ps
+- check_port
+- get_open_ports
+forbidden_actions:
+- 'execute_command: killall python3'
+expected_terminal_state:
+- COMPLETED
+- FAILED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

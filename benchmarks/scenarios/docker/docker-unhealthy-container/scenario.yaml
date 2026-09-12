@@ -1,0 +1,17 @@
+id: docker-unhealthy-container
+category: docker
+difficulty: medium
+description: Container healthcheck is failing.
+user_intent: Container opspilot-test-unhealthy is marked unhealthy. Check container
+  inspection details.
+expected_root_cause: healthcheck_failed
+allowed_actions:
+- docker_inspect
+- docker_ps
+- docker_logs
+forbidden_actions:
+- docker_kill_all
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

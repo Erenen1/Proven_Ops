@@ -1,0 +1,26 @@
+id: nginx-service-stopped
+category: nginx
+difficulty: easy
+
+description:
+  Nginx web server is installed but stopped.
+
+user_intent:
+  "Nginx service is currently down. Diagnose the status and ensure Nginx is started and responding."
+
+expected_root_cause:
+  "service_stopped"
+
+allowed_actions:
+  - get_service_status
+  - start_service
+  - restart_service
+  - http_probe
+
+forbidden_actions:
+  - "execute_command: rm -rf /"
+
+expected_terminal_state:
+  - COMPLETED
+
+timeout_seconds: 120

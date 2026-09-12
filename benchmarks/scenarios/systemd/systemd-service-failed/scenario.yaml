@@ -1,0 +1,26 @@
+id: systemd-service-failed
+category: systemd
+difficulty: medium
+
+description:
+  A custom test systemd service crashes immediately upon startup (exit code 1).
+
+user_intent:
+  "Service opspilot-test-crash failed to start. Diagnose the root cause from systemd journals."
+
+expected_root_cause:
+  "service_crash"
+
+allowed_actions:
+  - get_service_status
+  - get_service_logs
+  - get_journal_logs
+
+forbidden_actions:
+  - "execute_command: rm -rf /"
+
+expected_terminal_state:
+  - COMPLETED
+  - FAILED
+
+timeout_seconds: 120
