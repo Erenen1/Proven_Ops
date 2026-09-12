@@ -19,10 +19,42 @@ const (
 	TaskStatusCompleted       TaskStatus = "COMPLETED"
 	TaskStatusPartialSuccess  TaskStatus = "PARTIAL_SUCCESS"
 	TaskStatusFailed          TaskStatus = "FAILED"
+	TaskStatusRollingBack     TaskStatus = "ROLLING_BACK"
 	TaskStatusRolledBack      TaskStatus = "ROLLED_BACK"
+	TaskStatusRollbackFailed  TaskStatus = "ROLLBACK_FAILED"
+	TaskStatusWaitingForAgent TaskStatus = "WAITING_FOR_AGENT"
 	TaskStatusCancelled       TaskStatus = "CANCELLED"
 	TaskStatusTimeout         TaskStatus = "TIMEOUT"
 )
+
+type FailureType string
+
+const (
+	FailureExecutionFailed    FailureType = "EXECUTION_FAILED"
+	FailureValidationFailed   FailureType = "VALIDATION_FAILED"
+	FailureVerificationFailed FailureType = "VERIFICATION_FAILED"
+	FailureTimeout            FailureType = "TIMEOUT"
+	FailureAgentDisconnected  FailureType = "AGENT_DISCONNECTED"
+	FailurePolicyDenied       FailureType = "POLICY_DENIED"
+	FailurePermissionDenied   FailureType = "PERMISSION_DENIED"
+	FailureResourceConflict   FailureType = "RESOURCE_CONFLICT"
+	FailureInvalidModelOutput FailureType = "INVALID_MODEL_OUTPUT"
+	FailureUnsupportedOp      FailureType = "UNSUPPORTED_OPERATION"
+	FailureDependencyFailure  FailureType = "DEPENDENCY_FAILURE"
+	FailureCancelled          FailureType = "CANCELLED"
+)
+
+type StructuredFailure struct {
+	Type               FailureType    `json:"type"`
+	Action             string         `json:"action"`
+	Target             string         `json:"target,omitempty"`
+	Message            string         `json:"message"`
+	Retryable          bool           `json:"retryable"`
+	RequiresReplan     bool           `json:"requires_replan"`
+	RollbackRequired   bool           `json:"rollback_required"`
+	UserActionRequired bool           `json:"user_action_required"`
+	Details            map[string]any `json:"details,omitempty"`
+}
 
 type RiskLevel string
 
@@ -72,21 +104,25 @@ type AgentMetrics struct {
 }
 
 type Task struct {
-	ID               string           `json:"id"`
-	Title            string           `json:"title"`
-	Prompt           string           `json:"prompt"`
-	Status           TaskStatus       `json:"status"`
-	CreatedBy        string           `json:"created_by"`
-	TargetAgentIDs   []string         `json:"target_agent_ids"`
-	PlanVersion      int              `json:"plan_version"`
-	AIPlan           *AIPlanData      `json:"ai_plan,omitempty"`
-	RiskLevel        RiskLevel        `json:"risk_level"`
-	ErrorMessage     string           `json:"error_message,omitempty"`
-	ExecutionSummary string           `json:"execution_summary,omitempty"`
-	Steps            []*TaskStep      `json:"steps"`
-	CreatedAt        time.Time        `json:"created_at"`
-	UpdatedAt        time.Time        `json:"updated_at"`
-	CompletedAt      *time.Time       `json:"completed_at,omitempty"`
+	ID               string             `json:"id"`
+	Title            string             `json:"title"`
+	Prompt           string             `json:"prompt"`
+	Status           TaskStatus         `json:"status"`
+	CreatedBy        string             `json:"created_by"`
+	TargetAgentIDs   []string           `json:"target_agent_ids"`
+	PlanVersion      int                `json:"plan_version"`
+	IdempotencyKey   *string            `json:"idempotency_key,omitempty"`
+	ReplanCount      int                `json:"replan_count"`
+	MaxReplans       int                `json:"max_replans"`
+	AIPlan           *AIPlanData        `json:"ai_plan,omitempty"`
+	RiskLevel        RiskLevel          `json:"risk_level"`
+	ErrorMessage     string             `json:"error_message,omitempty"`
+	ExecutionSummary string             `json:"execution_summary,omitempty"`
+	FailureDetails   *StructuredFailure `json:"failure_details,omitempty"`
+	Steps            []*TaskStep        `json:"steps"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
+	CompletedAt      *time.Time         `json:"completed_at,omitempty"`
 }
 
 type AIPlanData struct {
@@ -117,6 +153,7 @@ type TaskStep struct {
 	TaskID               string                `json:"task_id"`
 	StepOrder            int                   `json:"step_order"`
 	Action               string                `json:"action"`
+	ExecutionID          string                `json:"execution_id,omitempty"`
 	Arguments            map[string]any        `json:"arguments"`
 	RiskLevel            RiskLevel             `json:"risk_level"`
 	RequiresApproval     bool                  `json:"requires_approval"`
