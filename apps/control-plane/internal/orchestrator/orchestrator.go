@@ -13,6 +13,7 @@ import (
 
 	"opspilot/control-plane/internal/database"
 	"opspilot/control-plane/internal/events"
+	"opspilot/control-plane/internal/failures"
 	"opspilot/control-plane/internal/grpcserver"
 	"opspilot/control-plane/internal/models"
 	"opspilot/control-plane/internal/policy"
@@ -30,6 +31,7 @@ type Orchestrator struct {
 	grpcServer   *grpcserver.Server
 	aiServiceURL string
 	httpClient   *http.Client
+	retryPolicy  *failures.RetryPolicy
 }
 
 func NewOrchestrator(
@@ -50,6 +52,7 @@ func NewOrchestrator(
 		grpcServer:   grpcServer,
 		aiServiceURL: aiServiceURL,
 		httpClient:   &http.Client{Timeout: 180 * time.Second},
+		retryPolicy:  failures.DefaultRetryPolicy(),
 	}
 }
 
@@ -266,6 +269,7 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 	agent, _ := o.store.GetAgent(ctx, targetAgentID)
 
 	steps, _ := o.store.GetTaskSteps(ctx, task.ID)
+	backups := make(map[string]string) // cleanPath -> backupPath
 
 	for _, step := range steps {
 		step.Status = "RUNNING"
@@ -273,18 +277,14 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 		step.StartedAt = &now
 		_ = o.store.UpdateTaskStep(ctx, step)
 
+		// Inject task_id into arguments so file_tool creates organized backup
+		if step.Arguments == nil {
+			step.Arguments = make(map[string]any)
+		}
+		step.Arguments["task_id"] = task.ID
+
 		argsJSON, _ := json.Marshal(step.Arguments)
 		stratJSON, _ := json.Marshal(step.VerificationStrategy)
-
-		cmd := &opspilotv1.ExecuteStepCommand{
-			TaskId:                   task.ID,
-			StepId:                   step.ID,
-			Action:                   step.Action,
-			ArgumentsJson:            string(argsJSON),
-			TimeoutSeconds:           60,
-			RiskLevel:                string(step.RiskLevel),
-			VerificationStrategyJson: string(stratJSON),
-		}
 
 		o.hub.Publish(task.ID, "STEP_STARTED", map[string]any{
 			"task_id":    task.ID,
@@ -294,23 +294,151 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 			"risk_level": step.RiskLevel,
 		})
 
-		stepRes, err := o.grpcServer.DispatchStep(ctx, targetAgentID, cmd)
+		var stepRes *opspilotv1.StepResult
+		var stepErr error
+
+		// Step retry loop for transient/network errors
+		maxAttempts := o.retryPolicy.MaxAttempts
+		for attempt := 0; attempt < maxAttempts; attempt++ {
+			executionID := fmt.Sprintf("%s/%s/%d", task.ID, step.ID, attempt)
+			step.ExecutionID = executionID
+			_ = o.store.UpdateTaskStep(ctx, step)
+
+			cmd := &opspilotv1.ExecuteStepCommand{
+				TaskId:                   task.ID,
+				StepId:                   step.ID,
+				Action:                   step.Action,
+				ArgumentsJson:            string(argsJSON),
+				TimeoutSeconds:           60,
+				RiskLevel:                string(step.RiskLevel),
+				VerificationStrategyJson: string(stratJSON),
+			}
+
+			stepRes, stepErr = o.grpcServer.DispatchStep(ctx, targetAgentID, cmd)
+			if stepErr == nil && stepRes != nil && stepRes.Success {
+				break // execution succeeded!
+			}
+
+			// Failure encountered: classify
+			target := ""
+			for _, key := range []string{"target", "name", "package_name", "service_name", "path", "file_path"} {
+				if t, ok := step.Arguments[key].(string); ok && t != "" {
+					target = t
+					break
+				}
+			}
+
+			exitCode := 1
+			stdout := ""
+			stderr := ""
+			if stepRes != nil {
+				exitCode = int(stepRes.ExitCode)
+				stdout = stepRes.Stdout
+				stderr = stepRes.Stderr
+			} else if stepErr != nil {
+				stderr = stepErr.Error()
+			}
+
+			sf := failures.ClassifyExecutionFailure(step.Action, exitCode, stdout, stderr, target)
+			if (stepErr != nil && (strings.Contains(stepErr.Error(), "connection") || strings.Contains(stepErr.Error(), "stream") || strings.Contains(stepErr.Error(), "unavailable"))) ||
+				strings.Contains(stderr, "agent disconnected") || strings.Contains(stderr, "connection closed") {
+				sf.Type = models.FailureAgentDisconnected
+				sf.Message = "Agent disconnected during execution"
+			}
+
+			// Check retryability
+			if o.retryPolicy.IsRetryable(sf, step.Action, attempt) {
+				_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+					TaskID:    task.ID,
+					AgentID:   agent.ID,
+					EventType: "RETRY_ATTEMPTED",
+					Action:    step.Action,
+					Details:   map[string]any{"attempt": attempt + 1, "reason": sf.Message},
+					CreatedAt: time.Now(),
+				})
+				time.Sleep(o.retryPolicy.GetBackoff(attempt))
+				continue
+			}
+			break
+		}
+
 		finished := time.Now()
 		step.FinishedAt = &finished
 
-		if err != nil || (stepRes != nil && !stepRes.Success) {
-			step.Status = "FAILED"
-			if stepRes != nil {
-				exitCode := int(stepRes.ExitCode)
-				step.ExitCode = &exitCode
-				step.Stdout = stepRes.Stdout
-				step.Stderr = stepRes.Stderr
+		// Evaluate final step outcome
+		if stepErr != nil || (stepRes != nil && !stepRes.Success) {
+			target := ""
+			for _, key := range []string{"target", "name", "package_name", "service_name", "path", "file_path"} {
+				if t, ok := step.Arguments[key].(string); ok && t != "" {
+					target = t
+					break
+				}
 			}
+
+			exitCode := 1
+			stdout := ""
+			stderr := ""
+			if stepRes != nil {
+				exitCode = int(stepRes.ExitCode)
+				stdout = stepRes.Stdout
+				stderr = stepRes.Stderr
+			} else if stepErr != nil {
+				stderr = stepErr.Error()
+			}
+
+			sf := failures.ClassifyExecutionFailure(step.Action, exitCode, stdout, stderr, target)
+			if (stepErr != nil && (strings.Contains(stepErr.Error(), "connection") || strings.Contains(stepErr.Error(), "stream") || strings.Contains(stepErr.Error(), "unavailable"))) ||
+				strings.Contains(stderr, "agent disconnected") || strings.Contains(stderr, "connection closed") {
+				sf.Type = models.FailureAgentDisconnected
+				sf.Message = "Agent disconnected during execution"
+			}
+
+			step.Status = "FAILED"
+			step.ExitCode = &exitCode
+			step.Stdout = stdout
+			step.Stderr = stderr
 			_ = o.store.UpdateTaskStep(ctx, step)
 
-			task.ErrorMessage = fmt.Sprintf("Step %s (%s) failed", step.ID, step.Action)
-			_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "")
+			task.FailureDetails = sf
+			task.ErrorMessage = sf.Message
+			_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+				TaskID:    task.ID,
+				AgentID:   agent.ID,
+				EventType: "STEP_FAILED",
+				Action:    step.Action,
+				Details:   map[string]any{"failure": sf, "step_id": step.ID},
+				CreatedAt: time.Now(),
+			})
+
+			// 1. Agent Disconnection handling
+			if sf.Type == models.FailureAgentDisconnected {
+				_ = o.handleAgentDisconnect(ctx, task, agent, step)
+				return
+			}
+
+			// 2. Rollback Compensation handling
+			if sf.RollbackRequired || (len(backups) > 0 && sf.Type == models.FailureValidationFailed) {
+				_ = o.executeRollback(ctx, task, agent, backups)
+				return
+			}
+
+			// 3. Controlled Replanning handling
+			if sf.RequiresReplan {
+				o.executeReplan(ctx, task, agent, step, sf)
+				return
+			}
+
+			// Fallback: Terminal failure
+			_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
 			_ = o.store.UpdateTask(ctx, task)
+			_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+				TaskID:    task.ID,
+				AgentID:   agent.ID,
+				EventType: "TASK_FAILED",
+				Action:    "execute",
+				Details:   map[string]any{"failure": sf},
+				CreatedAt: time.Now(),
+			})
 			return
 		}
 
@@ -321,6 +449,32 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 			step.ExitCode = &exitCode
 			step.Stdout = stepRes.Stdout
 			step.Stderr = stepRes.Stderr
+
+			var stepData map[string]any
+			if stepRes.VerificationJson != "" {
+				_ = json.Unmarshal([]byte(stepRes.VerificationJson), &stepData)
+			}
+
+			// Track backup if config file was written
+			if stepData != nil {
+				if bPath, ok := stepData["backup_path"].(string); ok && bPath != "" {
+					if cPath, ok := stepData["path"].(string); ok && cPath != "" {
+						backups[cPath] = bPath
+					}
+				}
+
+				// Record idempotent execution if detected
+				if stepData["idempotent"] == true {
+					_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+						TaskID:    task.ID,
+						AgentID:   agent.ID,
+						EventType: "IDEMPOTENT_NO_OP",
+						Action:    step.Action,
+						Details:   stepData,
+						CreatedAt: time.Now(),
+					})
+				}
+			}
 		}
 		_ = o.store.UpdateTaskStep(ctx, step)
 
@@ -338,6 +492,27 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 				Details:    map[string]any{"info": info},
 				VerifiedAt: time.Now(),
 			})
+			if !passed {
+				sf := failures.ClassifyVerificationFailure(step.VerificationStrategy.CheckType, step.VerificationStrategy.Target, info)
+				task.FailureDetails = sf
+				task.ErrorMessage = sf.Message
+
+				_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+					TaskID:    task.ID,
+					AgentID:   agent.ID,
+					EventType: "VERIFICATION_FAILED",
+					Action:    step.VerificationStrategy.CheckType,
+					Details:   map[string]any{"failure": sf},
+					CreatedAt: time.Now(),
+				})
+
+				if len(backups) > 0 {
+					_ = o.executeRollback(ctx, task, agent, backups)
+					return
+				}
+				o.executeReplan(ctx, task, agent, step, sf)
+				return
+			}
 		}
 	}
 
@@ -359,9 +534,25 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 				VerifiedAt: time.Now(),
 			})
 			if !passed {
-				task.ErrorMessage = fmt.Sprintf("Final verification failed: %s (%s)", strat.CheckType, info)
-				_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "")
-				_ = o.store.UpdateTask(ctx, task)
+				sf := failures.ClassifyVerificationFailure(strat.CheckType, strat.Target, info)
+				task.FailureDetails = sf
+				task.ErrorMessage = sf.Message
+
+				_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+					TaskID:    task.ID,
+					AgentID:   agent.ID,
+					EventType: "VERIFICATION_FAILED",
+					Action:    strat.CheckType,
+					Details:   map[string]any{"failure": sf},
+					CreatedAt: time.Now(),
+				})
+
+				if len(backups) > 0 {
+					_ = o.executeRollback(ctx, task, agent, backups)
+					return
+				}
+				dummyStep := &models.TaskStep{ID: "final-verification", Action: strat.CheckType}
+				o.executeReplan(ctx, task, agent, dummyStep, sf)
 				return
 			}
 		}
@@ -386,6 +577,344 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 		"status":  models.TaskStatusCompleted,
 		"summary": task.ExecutionSummary,
 	})
+}
+
+func (o *Orchestrator) executeRollback(ctx context.Context, task *models.Task, agent *models.Agent, backups map[string]string) error {
+	_, _ = o.machine.Transition(task, models.TaskStatusRollingBack, "Executing rollback compensation", "system")
+	_ = o.store.UpdateTask(ctx, task)
+
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "ROLLBACK_STARTED",
+		Action:    "rollback",
+		Details:   map[string]any{"backups": backups},
+		CreatedAt: time.Now(),
+	})
+
+	rollbackSuccess := true
+	for cleanPath, backupPath := range backups {
+		rbArgs, _ := json.Marshal(map[string]any{
+			"path":        cleanPath,
+			"backup_path": backupPath,
+		})
+		rbCmd := &opspilotv1.ExecuteStepCommand{
+			TaskId:         task.ID,
+			StepId:         uuid.New().String(),
+			Action:         "rollback_config",
+			ArgumentsJson:  string(rbArgs),
+			TimeoutSeconds: 30,
+			RiskLevel:      string(models.RiskMedium),
+		}
+		rbRes, err := o.grpcServer.DispatchStep(ctx, agent.ID, rbCmd)
+		if err != nil || (rbRes != nil && !rbRes.Success) {
+			rollbackSuccess = false
+			break
+		}
+	}
+
+	// If nginx was touched, restart service to activate restored configuration
+	for cleanPath := range backups {
+		if strings.Contains(cleanPath, "nginx") {
+			rstArgs, _ := json.Marshal(map[string]any{"name": "nginx"})
+			rstCmd := &opspilotv1.ExecuteStepCommand{
+				TaskId:         task.ID,
+				StepId:         uuid.New().String(),
+				Action:         "restart_service",
+				ArgumentsJson:  string(rstArgs),
+				TimeoutSeconds: 30,
+				RiskLevel:      string(models.RiskMedium),
+			}
+			_, _ = o.grpcServer.DispatchStep(ctx, agent.ID, rstCmd)
+			break
+		}
+	}
+
+	// Verify restored state independently
+	verificationPassed, _ := o.executeVerification(ctx, task.ID, agent, &models.VerificationStrategy{
+		CheckType:  "systemd_active",
+		Target:     "nginx",
+		TimeoutSec: 15,
+	})
+
+	if rollbackSuccess && verificationPassed {
+		task.ExecutionSummary = "Operation failed, but configuration and service were successfully rolled back to verified state."
+		_, _ = o.machine.Transition(task, models.TaskStatusRolledBack, task.ExecutionSummary, "system")
+		_ = o.store.UpdateTask(ctx, task)
+
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "ROLLBACK_COMPLETED",
+			Action:    "rollback",
+			Details:   map[string]any{"summary": task.ExecutionSummary, "verified": true},
+			CreatedAt: time.Now(),
+		})
+		return nil
+	}
+
+	task.ErrorMessage = "Rollback compensation failed or restored state could not be verified."
+	_, _ = o.machine.Transition(task, models.TaskStatusRollbackFailed, task.ErrorMessage, "system")
+	_ = o.store.UpdateTask(ctx, task)
+
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "ROLLBACK_FAILED",
+		Action:    "rollback",
+		Details:   map[string]any{"error": task.ErrorMessage},
+		CreatedAt: time.Now(),
+	})
+	return fmt.Errorf("rollback failed")
+}
+
+func (o *Orchestrator) executeReplan(ctx context.Context, task *models.Task, agent *models.Agent, failedStep *models.TaskStep, sf *models.StructuredFailure) {
+	if task.MaxReplans <= 0 {
+		task.MaxReplans = 3
+	}
+
+	if task.ReplanCount >= task.MaxReplans {
+		task.ErrorMessage = fmt.Sprintf("Maximum replan limit (%d) reached without resolution.", task.MaxReplans)
+		_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+		_ = o.store.UpdateTask(ctx, task)
+
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "REPLAN_LIMIT_REACHED",
+			Action:    "replan",
+			Details:   map[string]any{"replan_count": task.ReplanCount, "max_replans": task.MaxReplans},
+			CreatedAt: time.Now(),
+		})
+		return
+	}
+
+	// Transition: EXECUTING -> OBSERVING -> REPLANNING
+	_, _ = o.machine.Transition(task, models.TaskStatusObserving, "Observing failure conditions", "system")
+	_ = o.store.UpdateTask(ctx, task)
+
+	replanReason := fmt.Sprintf("Replanning attempt %d of %d due to %s", task.ReplanCount+1, task.MaxReplans, sf.Type)
+	_, _ = o.machine.Transition(task, models.TaskStatusReplanning, replanReason, "system")
+	_ = o.store.UpdateTask(ctx, task)
+
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "REPLAN_REQUESTED",
+		Action:    "replan",
+		Details:   map[string]any{"attempt": task.ReplanCount + 1, "failure": sf},
+		CreatedAt: time.Now(),
+	})
+
+	// Fetch prior successful steps
+	priorSteps, _ := o.store.GetTaskSteps(ctx, task.ID)
+	var successfulSteps []map[string]any
+	for _, st := range priorSteps {
+		if st.Status == "SUCCESS" {
+			successfulSteps = append(successfulSteps, map[string]any{
+				"id":        st.ID,
+				"action":    st.Action,
+				"arguments": st.Arguments,
+				"reason":    "completed step",
+			})
+		}
+	}
+
+	replanReq := map[string]any{
+		"task_id":                task.ID,
+		"intent":                 task.Prompt,
+		"failed_step_id":         failedStep.ID,
+		"failed_action":          failedStep.Action,
+		"exit_code":              failedStep.ExitCode,
+		"untrusted_stdout":       failedStep.Stdout,
+		"untrusted_stderr":       failedStep.Stderr,
+		"prior_successful_steps": successfulSteps,
+		"host_context": map[string]any{
+			"hostname":     agent.Hostname,
+			"os":           agent.OS,
+			"distribution": agent.Distribution,
+			"version":      agent.Version,
+			"architecture": agent.Architecture,
+			"capabilities": agent.Capabilities,
+		},
+		"supported_tools": o.policyEngine.GetSupportedTools(),
+	}
+
+	newPlan, err := o.callAIPlanning(ctx, "/api/v1/replan", replanReq)
+	if err != nil {
+		task.FailureDetails = &models.StructuredFailure{
+			Type:    models.FailureInvalidModelOutput,
+			Action:  "replan",
+			Message: fmt.Sprintf("AI replanning failed: %v", err),
+		}
+		task.ErrorMessage = task.FailureDetails.Message
+		_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+		_ = o.store.UpdateTask(ctx, task)
+
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "REPLAN_REJECTED",
+			Action:    "replan",
+			Details:   map[string]any{"error": err.Error()},
+			CreatedAt: time.Now(),
+		})
+		return
+	}
+
+	task.ReplanCount++
+	task.PlanVersion++
+	task.AIPlan = newPlan
+	_ = o.store.UpdateTask(ctx, task)
+
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "REPLAN_GENERATED",
+		Action:    "replan",
+		Details:   map[string]any{"plan_version": task.PlanVersion, "replan_count": task.ReplanCount},
+		CreatedAt: time.Now(),
+	})
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "PLAN_VERSION_CHANGED",
+		Action:    "version_bump",
+		Details:   map[string]any{"new_version": task.PlanVersion},
+		CreatedAt: time.Now(),
+	})
+
+	// Policy evaluation on new plan
+	highestRisk := models.RiskReadOnly
+	requiresApproval := false
+
+	var newSteps []*models.TaskStep
+	for idx, s := range newPlan.Steps {
+		realRisk, needApp, pErr := o.policyEngine.Evaluate(s.Action, s.Arguments, agent.Environment)
+		if pErr != nil || realRisk == models.RiskForbidden {
+			task.ErrorMessage = fmt.Sprintf("Forbidden action in replanned plan: %s (%v)", s.Action, pErr)
+			_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+			_ = o.store.UpdateTask(ctx, task)
+			return
+		}
+
+		if realRisk == models.RiskHigh || (realRisk == models.RiskMedium && highestRisk != models.RiskHigh) {
+			highestRisk = realRisk
+		}
+		if needApp {
+			requiresApproval = true
+		}
+
+		step := &models.TaskStep{
+			ID:                   uuid.New().String(),
+			TaskID:               task.ID,
+			StepOrder:            idx + 1,
+			Action:               s.Action,
+			Arguments:            s.Arguments,
+			RiskLevel:            realRisk,
+			RequiresApproval:     needApp,
+			VerificationStrategy: s.VerificationStrategy,
+			Status:               "PENDING",
+		}
+		newSteps = append(newSteps, step)
+		_ = o.store.SaveTaskStep(ctx, step)
+	}
+
+	task.Steps = newSteps
+	task.RiskLevel = highestRisk
+
+	// If approval required or resource conflict requires operator decision, invalidate old approval
+	if requiresApproval || sf.UserActionRequired || sf.Type == models.FailureResourceConflict {
+		_, _ = o.machine.Transition(task, models.TaskStatusWaitingApproval, "Replanned operations require operator decision/approval", "system")
+		_ = o.store.UpdateTask(ctx, task)
+
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "APPROVAL_INVALIDATED",
+			Action:    "replan_approval_gate",
+			Details:   map[string]any{"new_plan_version": task.PlanVersion, "reason": sf.Message},
+			CreatedAt: time.Now(),
+		})
+
+		approval := &models.Approval{
+			ID:          uuid.New().String(),
+			TaskID:      task.ID,
+			PlanVersion: task.PlanVersion,
+			Status:      "PENDING",
+			RiskLevel:   highestRisk,
+			CreatedAt:   time.Now(),
+		}
+		_ = o.store.SaveApproval(ctx, approval)
+
+		o.hub.Publish(task.ID, "APPROVAL_REQUIRED", map[string]any{
+			"task_id":      task.ID,
+			"plan_version": task.PlanVersion,
+			"risk_level":   highestRisk,
+			"steps":        task.Steps,
+			"failure":      sf,
+		})
+		return
+	}
+
+	// Otherwise, resume execution with new plan
+	go o.ExecuteTask(context.Background(), task.ID)
+}
+
+func (o *Orchestrator) handleAgentDisconnect(ctx context.Context, task *models.Task, agent *models.Agent, step *models.TaskStep) error {
+	_, _ = o.machine.Transition(task, models.TaskStatusWaitingForAgent, "Agent disconnected during execution; entering grace period", "system")
+	_ = o.store.UpdateTask(ctx, task)
+
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "AGENT_DISCONNECTED",
+		Action:    "disconnect_detected",
+		Details:   map[string]any{"step_id": step.ID, "action": step.Action},
+		CreatedAt: time.Now(),
+	})
+
+	// Wait up to 15 seconds grace period for agent to reconnect
+	reconnected := false
+	for i := 0; i < 15; i++ {
+		time.Sleep(1 * time.Second)
+		updatedAgent, err := o.store.GetAgent(ctx, agent.ID)
+		if err == nil && updatedAgent.Status == "online" && updatedAgent.LastHeartbeat != nil && time.Since(*updatedAgent.LastHeartbeat) < 10*time.Second {
+			reconnected = true
+			break
+		}
+	}
+
+	if reconnected {
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "AGENT_RECONNECTED",
+			Action:    "agent_recovered",
+			Details:   map[string]any{"agent_id": agent.ID},
+			CreatedAt: time.Now(),
+		})
+
+		_, _ = o.machine.Transition(task, models.TaskStatusObserving, "Agent reconnected; observing environment state", "system")
+		_ = o.store.UpdateTask(ctx, task)
+
+		go o.ExecuteTask(context.Background(), task.ID)
+		return nil
+	}
+
+	task.ErrorMessage = "Agent disconnected and failed to reconnect within grace period."
+	_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+	_ = o.store.UpdateTask(ctx, task)
+
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "TASK_FAILED",
+		Action:    "agent_disconnect_timeout",
+		Details:   map[string]any{"error": task.ErrorMessage},
+		CreatedAt: time.Now(),
+	})
+	return fmt.Errorf("agent disconnect timeout")
 }
 
 func (o *Orchestrator) callAIPlanning(ctx context.Context, path string, payload map[string]any) (*models.AIPlanData, error) {

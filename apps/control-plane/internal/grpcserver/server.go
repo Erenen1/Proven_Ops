@@ -115,6 +115,18 @@ func (s *Server) ConnectStream(stream opspilotv1.AgentService_ConnectStreamServe
 		if currentAgentID != "" {
 			s.mu.Lock()
 			delete(s.activeStreams, currentAgentID)
+			for stepID, ch := range s.stepResultChans {
+				select {
+				case ch <- &opspilotv1.StepResult{
+					StepId:       stepID,
+					Success:      false,
+					ExitCode:     1,
+					Stderr:       "connection closed: agent disconnected",
+					ErrorMessage: "connection closed: agent disconnected",
+				}:
+				default:
+				}
+			}
 			s.mu.Unlock()
 			_ = s.store.UpdateAgentStatus(context.Background(), currentAgentID, "offline")
 			s.hub.Publish("", "AGENT_DISCONNECTED", map[string]any{

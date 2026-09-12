@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -184,6 +185,22 @@ func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if idempotencyKey != "" {
+		existing, err := h.store.GetTaskByIdempotencyKey(r.Context(), idempotencyKey)
+		if err == nil && existing != nil {
+			_ = h.store.SaveAuditEvent(r.Context(), &models.AuditEvent{
+				TaskID:    existing.ID,
+				EventType: "IDEMPOTENT_NO_OP",
+				Action:    "duplicate_request_prevented",
+				Details:   map[string]any{"idempotency_key": idempotencyKey},
+				CreatedAt: time.Now(),
+			})
+			jsonResponse(w, http.StatusOK, existing)
+			return
+		}
+	}
+
 	task := &models.Task{
 		ID:             uuid.New().String(),
 		Title:          title,
@@ -191,9 +208,13 @@ func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Status:         models.TaskStatusCreated,
 		TargetAgentIDs: req.TargetAgentIDs,
 		PlanVersion:    1,
+		MaxReplans:     3,
 		RiskLevel:      models.RiskLow,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
+	}
+	if idempotencyKey != "" {
+		task.IdempotencyKey = &idempotencyKey
 	}
 
 	if err := h.store.SaveTask(r.Context(), task); err != nil {
@@ -205,7 +226,7 @@ func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		TaskID:    task.ID,
 		EventType: "TASK_CREATED",
 		Action:    "create",
-		Details:   map[string]any{"prompt": task.Prompt, "targets": task.TargetAgentIDs},
+		Details:   map[string]any{"prompt": task.Prompt, "targets": task.TargetAgentIDs, "idempotency_key": idempotencyKey},
 		CreatedAt: time.Now(),
 	})
 

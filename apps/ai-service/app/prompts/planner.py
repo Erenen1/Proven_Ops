@@ -46,7 +46,7 @@ Generate a complete, minimal, safe, and verifiable step-by-step execution plan t
       }},
       "reason": "Configure nginx to listen on port 8080",
       "suggested_risk": "MEDIUM",
-      "verification_strategy": {{"check_type": "systemd_active", "target": "nginx", "expected": "active"}}
+      "verification_strategy": null
     }},
     {{
       "id": "step-3",
@@ -87,8 +87,27 @@ Prior Successful Steps:
 {req.untrusted_stderr}
 </UNTRUSTED_OBSERVATION>
 
-Generate a revised recovery plan or diagnostic steps to fix the condition and proceed toward the goal.
-Respond ONLY with the JSON plan object structure.
+CRITICAL RECOVERY CONSTRAINTS:
+1. INTENT INTEGRITY: Never silently change the user intent. If the user requested port 8080 and a port conflict occurred ("Address already in use"), DO NOT propose port 8081 or any other port. Propose diagnostic inspection or state that operator intervention is required.
+2. DO NOT propose destructive commands (kill -9, rm -rf) against unknown running processes.
+
+Generate a revised recovery plan or diagnostic steps to address the condition.
+Respond ONLY with a valid JSON object strictly matching this schema:
+{{
+  "goal": "{req.intent}",
+  "reasoning": "Explanation of recovery approach or why operator decision is required",
+  "steps": [
+    {{
+      "id": "step-1",
+      "action": "execute_command",
+      "arguments": {{"command": "ss -tulpn | grep 8080"}},
+      "reason": "Inspect which process is occupying the requested port without modifying system state",
+      "suggested_risk": "READ_ONLY",
+      "verification_strategy": null
+    }}
+  ],
+  "overall_verification": []
+}}
 """
 
 def build_diagnosis_prompt(req: DiagnosisRequest) -> str:
