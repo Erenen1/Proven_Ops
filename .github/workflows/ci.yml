@@ -1,0 +1,78 @@
+name: OpsPilot CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-go:
+    name: Go Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install Protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Test Control Plane
+        run: |
+          cd apps/control-plane
+          go test -v -race ./...
+
+      - name: Test Server Agent
+        run: |
+          cd agent
+          go test -v -race ./...
+
+      - name: Build Binaries
+        run: |
+          cd apps/control-plane && go build -o ../../bin/control-plane ./cmd/server
+          cd ../../agent && go build -o ../bin/opspilot-agent ./cmd/agent
+
+  test-python:
+    name: Python AI Service Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          cd apps/ai-service
+          pip install -r requirements.txt
+
+      - name: Run Pytest
+        run: |
+          cd apps/ai-service
+          pytest
+
+  test-frontend:
+    name: Frontend Dashboard Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install & Build Dashboard
+        run: |
+          cd apps/dashboard
+          npm ci
+          npm run build

@@ -1,0 +1,32 @@
+# Ubuntu 24.04 Dev/Target Node for OpsPilot
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    systemd \
+    iproute2 \
+    procps \
+    net-tools \
+    sudo \
+    ca-certificates \
+    gnupg \
+    iptables \
+    tar \
+    git \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root opspilot user with controlled sudo permissions
+RUN useradd -m -s /bin/bash opspilot && \
+    mkdir -p /etc/sudoers.d && \
+    echo "opspilot ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/apt-get, /usr/bin/apt, /usr/bin/dpkg" > /etc/sudoers.d/opspilot && \
+    chmod 0440 /etc/sudoers.d/opspilot
+
+# Working directory for agent
+WORKDIR /opt/opspilot
+RUN chown -R opspilot:opspilot /opt/opspilot
+
+CMD ["/lib/systemd/systemd"]

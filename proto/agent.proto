@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package opspilot.v1;
+
+option go_package = "opspilot/proto/v1;opspilotv1";
+
+service AgentService {
+    // Initial agent registration using bootstrap token
+    rpc Register (RegisterRequest) returns (RegisterResponse);
+
+    // Periodic heartbeat containing host health metrics
+    rpc SendHeartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+
+    // Bidirectional streaming channel for task step execution, cancellation, and live streaming output
+    rpc ConnectStream (stream AgentStreamMessage) returns (stream ControlStreamMessage);
+}
+
+// ---------------- Agent Registration ----------------
+
+message RegisterRequest {
+    string hostname = 1;
+    string os = 2;
+    string distribution = 3;
+    string version = 4;
+    string architecture = 5;
+    repeated string capabilities = 6;
+    string bootstrap_token = 7;
+    string ip_address = 8;
+    string environment = 9;
+}
+
+message RegisterResponse {
+    string agent_id = 1;
+    bool approved = 2;
+    string message = 3;
+    int32 heartbeat_interval_sec = 4;
+    string client_cert_pem = 5;
+    string client_key_pem = 6;
+    string ca_cert_pem = 7;
+}
+
+// ---------------- Heartbeat & Metrics ----------------
+
+message HeartbeatRequest {
+    string agent_id = 1;
+    double cpu_usage_percent = 2;
+    int64 memory_usage_bytes = 3;
+    int64 memory_total_bytes = 4;
+    double disk_usage_percent = 5;
+    double load_avg_1m = 6;
+    int32 active_tasks = 7;
+    int64 timestamp_unix = 8;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    bool has_pending_tasks = 2;
+}
+
+// ---------------- Streaming Execution ----------------
+
+message ControlStreamMessage {
+    string message_id = 1;
+    oneof payload {
+        ExecuteStepCommand execute_step = 2;
+        CancelStepCommand cancel_step = 3;
+        PingCommand ping = 4;
+    }
+}
+
+message ExecuteStepCommand {
+    string task_id = 1;
+    string step_id = 2;
+    string action = 3;
+    string arguments_json = 4;
+    int32 timeout_seconds = 5;
+    string risk_level = 6;
+    string verification_strategy_json = 7;
+}
+
+message CancelStepCommand {
+    string task_id = 1;
+    string step_id = 2;
+    string reason = 3;
+}
+
+message PingCommand {
+    int64 timestamp_unix = 1;
+}
+
+message AgentStreamMessage {
+    string message_id = 1;
+    string agent_id = 2;
+    oneof payload {
+        HandshakeMessage handshake = 3;
+        StepOutputChunk output_chunk = 4;
+        StepResult step_result = 5;
+        PongMessage pong = 6;
+    }
+}
+
+message HandshakeMessage {
+    string agent_id = 1;
+    string hostname = 2;
+    string version = 3;
+}
+
+message StepOutputChunk {
+    string task_id = 1;
+    string step_id = 2;
+    string stream_type = 3; // "stdout" or "stderr"
+    string data = 4;
+    int64 timestamp_unix = 5;
+}
+
+message StepResult {
+    string task_id = 1;
+    string step_id = 2;
+    string action = 3;
+    int32 exit_code = 4;
+    string stdout = 5;
+    string stderr = 6;
+    int64 duration_ms = 7;
+    bool success = 8;
+    string error_message = 9;
+    string verification_json = 10;
+}
+
+message PongMessage {
+    int64 timestamp_unix = 1;
+}

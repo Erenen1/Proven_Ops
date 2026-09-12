@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: opspilot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opspilot
+      POSTGRES_PASSWORD: opspilot_dev_secret
+      POSTGRES_DB: opspilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - opspilot_pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opspilot -d opspilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile
+    container_name: opspilot-control-plane
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://opspilot:opspilot_dev_secret@postgres:5432/opspilot?sslmode=disable
+      CONTROL_PLANE_HTTP_PORT: "8080"
+      CONTROL_PLANE_GRPC_PORT: "9090"
+      JWT_SECRET: super_secret_jwt_signing_key_change_in_production_min_32_bytes
+      BOOTSTRAP_TOKEN: opspilot-default-bootstrap-token-2026
+      AI_SERVICE_URL: http://ai-service:8000
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ai-service:
+    build:
+      context: apps/ai-service
+      dockerfile: Dockerfile
+    container_name: opspilot-ai-service
+    restart: unless-stopped
+    environment:
+      PORT: "8000"
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      DEFAULT_LLM_MODEL: qwen2.5:3b
+    ports:
+      - "8000:8000"
+
+  dashboard:
+    build:
+      context: apps/dashboard
+      dockerfile: Dockerfile
+    container_name: opspilot-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - control-plane
+
+volumes:
+  opspilot_pgdata:
