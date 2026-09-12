@@ -152,12 +152,13 @@ If a credential is accidentally committed:
 
 ## 6. Keeping Documentation in Sync
 
-OpsPilot maintains architectural living memory documents:
-- [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+OpsPilot maintains architectural living memory documents in `docs/context/`:
+- [docs/context/ARCHITECTURE.md](docs/context/ARCHITECTURE.md)
+- [docs/context/PRODUCT.md](docs/context/PRODUCT.md)
+- [docs/context/DECISIONS.md](docs/context/DECISIONS.md)
+- [docs/context/CURRENT_STATE.md](docs/context/CURRENT_STATE.md)
+- [docs/context/SESSION_HANDOFF.md](docs/context/SESSION_HANDOFF.md)
 - [docs/SECURITY.md](docs/SECURITY.md)
-- [docs/DECISIONS.md](docs/DECISIONS.md)
-- [docs/ROADMAP.md](docs/ROADMAP.md)
 
 If your PR alters service boundaries, contracts, security assumptions, or design decisions, **you must update the relevant documentation in the same PR**. Do not leave outdated documentation behind.
 
