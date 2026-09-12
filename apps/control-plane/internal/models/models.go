@@ -42,6 +42,7 @@ const (
 	FailureUnsupportedOp      FailureType = "UNSUPPORTED_OPERATION"
 	FailureDependencyFailure  FailureType = "DEPENDENCY_FAILURE"
 	FailureCancelled          FailureType = "CANCELLED"
+	FailureUncertainExecution FailureType = "UNCERTAIN_EXECUTION"
 )
 
 type StructuredFailure struct {

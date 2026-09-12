@@ -11,7 +11,25 @@ import (
 func ClassifyExecutionFailure(action string, exitCode int, stdout, stderr string, target string) *models.StructuredFailure {
 	combined := strings.ToLower(stdout + "\n" + stderr)
 
-	// 0. Agent disconnection
+	// 0. Uncertain execution (agent crashed mid-execution of modifying action)
+	if strings.Contains(combined, "uncertain_execution") {
+		return &models.StructuredFailure{
+			Type:               models.FailureUncertainExecution,
+			Action:             action,
+			Target:             target,
+			Message:            fmt.Sprintf("Uncertain outcome for '%s': agent process died mid-execution; observation required", action),
+			Retryable:          false,
+			RequiresReplan:     false,
+			RollbackRequired:   false,
+			UserActionRequired: false,
+			Details: map[string]any{
+				"exit_code": exitCode,
+				"error":     "UNCERTAIN_EXECUTION",
+			},
+		}
+	}
+
+	// 0b. Agent disconnection
 	if strings.Contains(combined, "agent disconnected") || strings.Contains(combined, "connection closed") || strings.Contains(combined, "stream terminated") {
 		return &models.StructuredFailure{
 			Type:               models.FailureAgentDisconnected,

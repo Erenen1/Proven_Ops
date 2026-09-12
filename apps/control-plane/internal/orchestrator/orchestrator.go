@@ -23,15 +23,17 @@ import (
 )
 
 type Orchestrator struct {
-	store        database.Store
-	machine      *statemachine.Machine
-	policyEngine *policy.Engine
-	verifier     *verification.Engine
-	hub          *events.Hub
-	grpcServer   *grpcserver.Server
-	aiServiceURL string
-	httpClient   *http.Client
-	retryPolicy  *failures.RetryPolicy
+	store           database.Store
+	machine         *statemachine.Machine
+	policyEngine    *policy.Engine
+	verifier        *verification.Engine
+	hub             *events.Hub
+	grpcServer      *grpcserver.Server
+	aiServiceURL    string
+	httpClient      *http.Client
+	retryPolicy     *failures.RetryPolicy
+	maxToolCalls    int
+	maxTaskDuration time.Duration
 }
 
 func NewOrchestrator(
@@ -44,15 +46,26 @@ func NewOrchestrator(
 	aiServiceURL string,
 ) *Orchestrator {
 	return &Orchestrator{
-		store:        store,
-		machine:      machine,
-		policyEngine: policyEngine,
-		verifier:     verifier,
-		hub:          hub,
-		grpcServer:   grpcServer,
-		aiServiceURL: aiServiceURL,
-		httpClient:   &http.Client{Timeout: 180 * time.Second},
-		retryPolicy:  failures.DefaultRetryPolicy(),
+		store:           store,
+		machine:         machine,
+		policyEngine:    policyEngine,
+		verifier:        verifier,
+		hub:             hub,
+		grpcServer:      grpcServer,
+		aiServiceURL:    aiServiceURL,
+		httpClient:      &http.Client{Timeout: 180 * time.Second},
+		retryPolicy:     failures.DefaultRetryPolicy(),
+		maxToolCalls:    20,
+		maxTaskDuration: 10 * time.Minute,
+	}
+}
+
+func (o *Orchestrator) SetExecutionLimits(maxToolCalls int, maxDuration time.Duration) {
+	if maxToolCalls > 0 {
+		o.maxToolCalls = maxToolCalls
+	}
+	if maxDuration > 0 {
+		o.maxTaskDuration = maxDuration
 	}
 }
 
@@ -268,10 +281,53 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 	targetAgentID := task.TargetAgentIDs[0]
 	agent, _ := o.store.GetAgent(ctx, targetAgentID)
 
+	// Check total execution duration
+	if !task.CreatedAt.IsZero() && time.Since(task.CreatedAt) > o.maxTaskDuration {
+		task.ErrorMessage = fmt.Sprintf("Task exceeded maximum allowed duration of %v", o.maxTaskDuration)
+		_, _ = o.machine.Transition(task, models.TaskStatusTimeout, task.ErrorMessage, "system")
+		_ = o.store.UpdateTask(ctx, task)
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			EventType: "TASK_FAILED",
+			Action:    "task_timeout",
+			Details:   map[string]any{"duration": time.Since(task.CreatedAt).String(), "limit": o.maxTaskDuration.String()},
+			CreatedAt: time.Now(),
+		})
+		return
+	}
+
 	steps, _ := o.store.GetTaskSteps(ctx, task.ID)
 	backups := make(map[string]string) // cleanPath -> backupPath
 
+	// Count total prior executed steps for this task
+	executedToolCalls := 0
+	for _, st := range steps {
+		if st.Status == "SUCCESS" {
+			executedToolCalls++
+		}
+	}
+
 	for _, step := range steps {
+		if step.Status == "SUCCESS" {
+			continue // skip already succeeded steps across replans
+		}
+
+		// Enforce MAX_TOOL_CALLS bound
+		if executedToolCalls >= o.maxToolCalls {
+			task.ErrorMessage = fmt.Sprintf("Maximum tool calls limit (%d) reached for task", o.maxToolCalls)
+			_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+			_ = o.store.UpdateTask(ctx, task)
+			_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+				TaskID:    task.ID,
+				EventType: "TASK_FAILED",
+				Action:    "tool_calls_limit_reached",
+				Details:   map[string]any{"executed_tool_calls": executedToolCalls, "limit": o.maxToolCalls},
+				CreatedAt: time.Now(),
+			})
+			return
+		}
+		executedToolCalls++
+
 		step.Status = "RUNNING"
 		now := time.Now()
 		step.StartedAt = &now
@@ -413,6 +469,12 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 			// 1. Agent Disconnection handling
 			if sf.Type == models.FailureAgentDisconnected {
 				_ = o.handleAgentDisconnect(ctx, task, agent, step)
+				return
+			}
+
+			// 1b. Uncertain Outcome handling (Agent died mid-mutation; observe before retry)
+			if sf.Type == models.FailureUncertainExecution {
+				_ = o.handleUncertainExecution(ctx, task, agent, step, sf)
 				return
 			}
 
@@ -915,6 +977,97 @@ func (o *Orchestrator) handleAgentDisconnect(ctx context.Context, task *models.T
 		CreatedAt: time.Now(),
 	})
 	return fmt.Errorf("agent disconnect timeout")
+}
+
+func (o *Orchestrator) handleUncertainExecution(ctx context.Context, task *models.Task, agent *models.Agent, step *models.TaskStep, sf *models.StructuredFailure) error {
+	// Transition to OBSERVING to determine ground truth without blind execution
+	_, _ = o.machine.Transition(task, models.TaskStatusObserving, "Observing ground truth after uncertain outcome", "system")
+	_ = o.store.UpdateTask(ctx, task)
+
+	_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+		TaskID:    task.ID,
+		AgentID:   agent.ID,
+		EventType: "UNCERTAIN_EXECUTION_OBSERVING",
+		Action:    step.Action,
+		Details:   map[string]any{"step_id": step.ID, "action": step.Action},
+		CreatedAt: time.Now(),
+	})
+
+	alreadySatisfied := false
+	target := ""
+	for _, key := range []string{"target", "name", "package_name", "service_name", "path", "file_path"} {
+		if t, ok := step.Arguments[key].(string); ok && t != "" {
+			target = t
+			break
+		}
+	}
+
+	// Operation-specific observation
+	switch step.Action {
+	case "install_package":
+		passed, _ := o.executeVerification(ctx, task.ID, agent, &models.VerificationStrategy{
+			CheckType:  "package_installed",
+			Target:     target,
+			TimeoutSec: 15,
+		})
+		alreadySatisfied = passed
+
+	case "start_service", "restart_service":
+		passed, _ := o.executeVerification(ctx, task.ID, agent, &models.VerificationStrategy{
+			CheckType:  "systemd_active",
+			Target:     target,
+			TimeoutSec: 15,
+		})
+		alreadySatisfied = passed
+
+	case "write_config_file":
+		// Probe file content SHA256
+		if expectedContent, ok := step.Arguments["content"].(string); ok && target != "" {
+			argsJSON, _ := json.Marshal(map[string]any{"path": target})
+			cmd := &opspilotv1.ExecuteStepCommand{
+				TaskId:         task.ID,
+				StepId:         uuid.New().String(),
+				Action:         "read_file",
+				ArgumentsJson:  string(argsJSON),
+				TimeoutSeconds: 10,
+			}
+			res, err := o.grpcServer.DispatchStep(ctx, agent.ID, cmd)
+			if err == nil && res != nil && res.Success && strings.TrimSpace(res.Stdout) == strings.TrimSpace(expectedContent) {
+				alreadySatisfied = true
+			}
+		}
+	}
+
+	if alreadySatisfied {
+		// Operation already completed host-side before crash!
+		step.Status = "SUCCESS"
+		exitZero := 0
+		step.ExitCode = &exitZero
+		step.Stdout = "State observation confirmed desired mutation already satisfied"
+		step.Stderr = ""
+		_ = o.store.UpdateTaskStep(ctx, step)
+
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "IDEMPOTENT_RECOVERED",
+			Action:    step.Action,
+			Details:   map[string]any{"step_id": step.ID, "target": target},
+			CreatedAt: time.Now(),
+		})
+
+		// Transition back to EXECUTING and continue remainder of plan
+		_, _ = o.machine.Transition(task, models.TaskStatusExecuting, "Desired state already satisfied; resuming execution", "system")
+		_ = o.store.UpdateTask(ctx, task)
+
+		go o.ExecuteTask(context.Background(), task.ID)
+		return nil
+	}
+
+	// State is NOT satisfied: safe replan or operator decision
+	sf.RequiresReplan = true
+	o.executeReplan(ctx, task, agent, step, sf)
+	return nil
 }
 
 func (o *Orchestrator) callAIPlanning(ctx context.Context, path string, payload map[string]any) (*models.AIPlanData, error) {
