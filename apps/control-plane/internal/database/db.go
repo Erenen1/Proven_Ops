@@ -21,6 +21,7 @@ type Store interface {
 	// Task methods
 	SaveTask(ctx context.Context, task *models.Task) error
 	GetTask(ctx context.Context, id string) (*models.Task, error)
+	GetTaskByIdempotencyKey(ctx context.Context, key string) (*models.Task, error)
 	ListTasks(ctx context.Context) ([]*models.Task, error)
 	UpdateTask(ctx context.Context, task *models.Task) error
 
@@ -137,6 +138,20 @@ func (s *MemoryStore) GetTask(ctx context.Context, id string) (*models.Task, err
 		task.Steps = steps
 	}
 	return task, nil
+}
+
+func (s *MemoryStore) GetTaskByIdempotencyKey(ctx context.Context, key string) (*models.Task, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.tasks {
+		if t.IdempotencyKey != nil && *t.IdempotencyKey == key {
+			if steps, ok := s.steps[t.ID]; ok {
+				t.Steps = steps
+			}
+			return t, nil
+		}
+	}
+	return nil, fmt.Errorf("task with idempotency key %s not found", key)
 }
 
 func (s *MemoryStore) ListTasks(ctx context.Context) ([]*models.Task, error) {

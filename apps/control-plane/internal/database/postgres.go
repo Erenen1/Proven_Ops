@@ -211,21 +211,35 @@ func (s *PostgresStore) SaveTask(ctx context.Context, task *models.Task) error {
 	if task.AIPlan != nil {
 		planJSON, _ = json.Marshal(task.AIPlan)
 	}
+	var failureJSON []byte
+	if task.FailureDetails != nil {
+		failureJSON, _ = json.Marshal(task.FailureDetails)
+	}
+
+	maxReplans := task.MaxReplans
+	if maxReplans <= 0 {
+		maxReplans = 3
+	}
 
 	query := `
 		INSERT INTO tasks (
-			id, title, prompt, status, plan_version, ai_plan, risk_level,
-			error_message, execution_summary, created_at, updated_at, completed_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			id, title, prompt, status, plan_version, idempotency_key, replan_count, max_replans,
+			ai_plan, risk_level, error_message, execution_summary, failure_details,
+			created_at, updated_at, completed_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (id) DO UPDATE SET
 			title = EXCLUDED.title,
 			prompt = EXCLUDED.prompt,
 			status = EXCLUDED.status,
 			plan_version = EXCLUDED.plan_version,
+			idempotency_key = EXCLUDED.idempotency_key,
+			replan_count = EXCLUDED.replan_count,
+			max_replans = EXCLUDED.max_replans,
 			ai_plan = EXCLUDED.ai_plan,
 			risk_level = EXCLUDED.risk_level,
 			error_message = EXCLUDED.error_message,
 			execution_summary = EXCLUDED.execution_summary,
+			failure_details = EXCLUDED.failure_details,
 			updated_at = EXCLUDED.updated_at,
 			completed_at = EXCLUDED.completed_at
 	`
@@ -238,7 +252,8 @@ func (s *PostgresStore) SaveTask(ctx context.Context, task *models.Task) error {
 
 	_, err = tx.Exec(ctx, query,
 		task.ID, task.Title, task.Prompt, string(task.Status), task.PlanVersion,
-		planJSON, string(task.RiskLevel), task.ErrorMessage, task.ExecutionSummary,
+		task.IdempotencyKey, task.ReplanCount, maxReplans,
+		planJSON, string(task.RiskLevel), task.ErrorMessage, task.ExecutionSummary, failureJSON,
 		task.CreatedAt, task.UpdatedAt, task.CompletedAt,
 	)
 	if err != nil {
@@ -260,31 +275,23 @@ func (s *PostgresStore) SaveTask(ctx context.Context, task *models.Task) error {
 	return tx.Commit(ctx)
 }
 
-func (s *PostgresStore) GetTask(ctx context.Context, id string) (*models.Task, error) {
-	row := s.pool.QueryRow(ctx, `
-		SELECT id, title, prompt, status, plan_version, ai_plan, risk_level,
-		       error_message, execution_summary, created_at, updated_at, completed_at
-		FROM tasks WHERE id = $1
-	`, id)
-
+func (s *PostgresStore) scanTaskRow(row pgx.Row) (*models.Task, error) {
 	var t models.Task
-	var planJSON []byte
-	var errMsg, execSum *string
+	var planJSON, failureJSON []byte
+	var errMsg, execSum, idempKey *string
 	var statusStr, riskStr string
 
 	err := row.Scan(
-		&t.ID, &t.Title, &t.Prompt, &statusStr, &t.PlanVersion, &planJSON, &riskStr,
-		&errMsg, &execSum, &t.CreatedAt, &t.UpdatedAt, &t.CompletedAt,
+		&t.ID, &t.Title, &t.Prompt, &statusStr, &t.PlanVersion, &idempKey, &t.ReplanCount, &t.MaxReplans,
+		&planJSON, &riskStr, &errMsg, &execSum, &failureJSON, &t.CreatedAt, &t.UpdatedAt, &t.CompletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("task not found: %s", id)
-		}
 		return nil, err
 	}
 
 	t.Status = models.TaskStatus(statusStr)
 	t.RiskLevel = models.RiskLevel(riskStr)
+	t.IdempotencyKey = idempKey
 	if errMsg != nil {
 		t.ErrorMessage = *errMsg
 	}
@@ -293,6 +300,27 @@ func (s *PostgresStore) GetTask(ctx context.Context, id string) (*models.Task, e
 	}
 	if len(planJSON) > 0 {
 		_ = json.Unmarshal(planJSON, &t.AIPlan)
+	}
+	if len(failureJSON) > 0 {
+		_ = json.Unmarshal(failureJSON, &t.FailureDetails)
+	}
+	return &t, nil
+}
+
+func (s *PostgresStore) GetTask(ctx context.Context, id string) (*models.Task, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, title, prompt, status, plan_version, idempotency_key, replan_count, max_replans,
+		       ai_plan, risk_level, error_message, execution_summary, failure_details,
+		       created_at, updated_at, completed_at
+		FROM tasks WHERE id = $1
+	`, id)
+
+	t, err := s.scanTaskRow(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("task not found: %s", id)
+		}
+		return nil, err
 	}
 
 	// Targets
@@ -311,13 +339,47 @@ func (s *PostgresStore) GetTask(ctx context.Context, id string) (*models.Task, e
 	steps, _ := s.GetTaskSteps(ctx, t.ID)
 	t.Steps = steps
 
-	return &t, nil
+	return t, nil
+}
+
+func (s *PostgresStore) GetTaskByIdempotencyKey(ctx context.Context, key string) (*models.Task, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, title, prompt, status, plan_version, idempotency_key, replan_count, max_replans,
+		       ai_plan, risk_level, error_message, execution_summary, failure_details,
+		       created_at, updated_at, completed_at
+		FROM tasks WHERE idempotency_key = $1
+	`, key)
+
+	t, err := s.scanTaskRow(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("task with idempotency key %s not found", key)
+		}
+		return nil, err
+	}
+
+	targetRows, err := s.pool.Query(ctx, "SELECT agent_id FROM task_targets WHERE task_id = $1", t.ID)
+	if err == nil {
+		defer targetRows.Close()
+		for targetRows.Next() {
+			var aID string
+			if err := targetRows.Scan(&aID); err == nil {
+				t.TargetAgentIDs = append(t.TargetAgentIDs, aID)
+			}
+		}
+	}
+
+	steps, _ := s.GetTaskSteps(ctx, t.ID)
+	t.Steps = steps
+
+	return t, nil
 }
 
 func (s *PostgresStore) ListTasks(ctx context.Context) ([]*models.Task, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, title, prompt, status, plan_version, ai_plan, risk_level,
-		       error_message, execution_summary, created_at, updated_at, completed_at
+		SELECT id, title, prompt, status, plan_version, idempotency_key, replan_count, max_replans,
+		       ai_plan, risk_level, error_message, execution_summary, failure_details,
+		       created_at, updated_at, completed_at
 		FROM tasks ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -327,31 +389,11 @@ func (s *PostgresStore) ListTasks(ctx context.Context) ([]*models.Task, error) {
 
 	var tasks []*models.Task
 	for rows.Next() {
-		var t models.Task
-		var planJSON []byte
-		var errMsg, execSum *string
-		var statusStr, riskStr string
-
-		err := rows.Scan(
-			&t.ID, &t.Title, &t.Prompt, &statusStr, &t.PlanVersion, &planJSON, &riskStr,
-			&errMsg, &execSum, &t.CreatedAt, &t.UpdatedAt, &t.CompletedAt,
-		)
+		t, err := s.scanTaskRow(rows)
 		if err != nil {
 			return nil, err
 		}
-
-		t.Status = models.TaskStatus(statusStr)
-		t.RiskLevel = models.RiskLevel(riskStr)
-		if errMsg != nil {
-			t.ErrorMessage = *errMsg
-		}
-		if execSum != nil {
-			t.ExecutionSummary = *execSum
-		}
-		if len(planJSON) > 0 {
-			_ = json.Unmarshal(planJSON, &t.AIPlan)
-		}
-		tasks = append(tasks, &t)
+		tasks = append(tasks, t)
 	}
 
 	for _, t := range tasks {
@@ -389,13 +431,14 @@ func (s *PostgresStore) SaveTaskStep(ctx context.Context, step *models.TaskStep)
 
 	query := `
 		INSERT INTO task_steps (
-			id, task_id, step_order, action, arguments, risk_level,
+			id, task_id, step_order, action, execution_id, arguments, risk_level,
 			requires_approval, verification_strategy, status, exit_code,
 			stdout, stderr, started_at, finished_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (id) DO UPDATE SET
 			step_order = EXCLUDED.step_order,
 			action = EXCLUDED.action,
+			execution_id = EXCLUDED.execution_id,
 			arguments = EXCLUDED.arguments,
 			risk_level = EXCLUDED.risk_level,
 			requires_approval = EXCLUDED.requires_approval,
@@ -409,7 +452,7 @@ func (s *PostgresStore) SaveTaskStep(ctx context.Context, step *models.TaskStep)
 	`
 	now := time.Now()
 	_, err := s.pool.Exec(ctx, query,
-		step.ID, step.TaskID, step.StepOrder, step.Action, argsJSON, string(step.RiskLevel),
+		step.ID, step.TaskID, step.StepOrder, step.Action, step.ExecutionID, argsJSON, string(step.RiskLevel),
 		step.RequiresApproval, stratJSON, step.Status, step.ExitCode,
 		step.Stdout, step.Stderr, step.StartedAt, step.FinishedAt, now,
 	)
@@ -418,7 +461,7 @@ func (s *PostgresStore) SaveTaskStep(ctx context.Context, step *models.TaskStep)
 
 func (s *PostgresStore) GetTaskSteps(ctx context.Context, taskID string) ([]*models.TaskStep, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, task_id, step_order, action, arguments, risk_level,
+		SELECT id, task_id, step_order, action, COALESCE(execution_id, ''), arguments, risk_level,
 		       requires_approval, verification_strategy, status, exit_code,
 		       stdout, stderr, started_at, finished_at
 		FROM task_steps WHERE task_id = $1 ORDER BY step_order ASC
@@ -432,17 +475,18 @@ func (s *PostgresStore) GetTaskSteps(ctx context.Context, taskID string) ([]*mod
 	for rows.Next() {
 		var st models.TaskStep
 		var argsJSON, stratJSON []byte
-		var riskStr string
+		var riskStr, execID string
 		var stdout, stderr *string
 
 		if err := rows.Scan(
-			&st.ID, &st.TaskID, &st.StepOrder, &st.Action, &argsJSON, &riskStr,
+			&st.ID, &st.TaskID, &st.StepOrder, &st.Action, &execID, &argsJSON, &riskStr,
 			&st.RequiresApproval, &stratJSON, &st.Status, &st.ExitCode,
 			&stdout, &stderr, &st.StartedAt, &st.FinishedAt,
 		); err != nil {
 			return nil, err
 		}
 
+		st.ExecutionID = execID
 		st.RiskLevel = models.RiskLevel(riskStr)
 		if stdout != nil {
 			st.Stdout = *stdout
