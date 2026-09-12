@@ -1,11 +1,14 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -76,11 +79,43 @@ func (t *FileTool) Execute(ctx context.Context, args map[string]any) (*Execution
 		if content == "" {
 			content, _ = args["data"].(string)
 		}
-		backupPath := ""
 
-		// If file exists, create automatic backup
+		// 1. Idempotency Pre-check: if file exists and has identical content, skip write
+		if existing, err := os.ReadFile(cleanPath); err == nil {
+			if string(existing) == content {
+				return &ExecutionResult{
+					ExitCode: 0,
+					Stdout:   fmt.Sprintf("Configuration at %s is already up to date (idempotent no-op).", cleanPath),
+					Success:  true,
+					Data: map[string]any{
+						"path":       cleanPath,
+						"idempotent": true,
+						"status":     "ALREADY_SATISFIED",
+					},
+				}, nil
+			}
+		}
+
+		backupPath := ""
+		taskID, _ := args["task_id"].(string)
+		if taskID == "" {
+			taskID = "default"
+		}
+
+		// 2. Prepare persistent backup directory: /var/lib/opspilot/backups/{task_id}
+		backupDir := filepath.Join("/var/lib/opspilot/backups", taskID)
+		if err := os.MkdirAll(backupDir, 0755); err != nil {
+			// Fallback to /tmp if /var/lib not writable
+			backupDir = filepath.Join("/tmp/opspilot/backups", taskID)
+			_ = os.MkdirAll(backupDir, 0755)
+		}
+
+		// If original file exists, copy to backup
+		hadPrevious := false
 		if _, err := os.Stat(cleanPath); err == nil {
-			backupPath = fmt.Sprintf("%s.bak.%d", cleanPath, time.Now().Unix())
+			hadPrevious = true
+			baseName := filepath.Base(cleanPath)
+			backupPath = filepath.Join(backupDir, fmt.Sprintf("%s.bak.%d", baseName, time.Now().Unix()))
 			src, err := os.Open(cleanPath)
 			if err == nil {
 				dst, err := os.Create(backupPath)
@@ -95,7 +130,7 @@ func (t *FileTool) Execute(ctx context.Context, args map[string]any) (*Execution
 		// Ensure parent directory exists
 		_ = os.MkdirAll(filepath.Dir(cleanPath), 0755)
 
-		// Write new content
+		// 3. Write new content
 		if err := os.WriteFile(cleanPath, []byte(content), 0644); err != nil {
 			return &ExecutionResult{
 				ExitCode: 1,
@@ -104,13 +139,109 @@ func (t *FileTool) Execute(ctx context.Context, args map[string]any) (*Execution
 			}, nil
 		}
 
+		// 4. Validate Configuration (e.g. nginx -t)
+		validateCmd, _ := args["validate_command"].(string)
+		if validateCmd == "" && strings.Contains(cleanPath, "nginx") {
+			validateCmd = "nginx -t"
+		}
+
+		if validateCmd != "" {
+			vCmd := exec.CommandContext(ctx, "bash", "-c", validateCmd)
+			var vStdout, vStderr bytes.Buffer
+			vCmd.Stdout = &vStdout
+			vCmd.Stderr = &vStderr
+			if err := vCmd.Run(); err != nil {
+				// Syntax / Configuration validation FAILED!
+				// Execute IMMEDIATE transaction rollback to restore system safety
+				if hadPrevious && backupPath != "" {
+					bSrc, bErr := os.ReadFile(backupPath)
+					if bErr == nil {
+						_ = os.WriteFile(cleanPath, bSrc, 0644)
+					}
+				} else {
+					_ = os.Remove(cleanPath)
+				}
+
+				return &ExecutionResult{
+					ExitCode: 1,
+					Stdout:   vStdout.String(),
+					Stderr:   fmt.Sprintf("Configuration validation failed (%s): %s; automatically rolled back to original", validateCmd, strings.TrimSpace(vStderr.String())),
+					Success:  false,
+					Data: map[string]any{
+						"path":             cleanPath,
+						"backup_path":      backupPath,
+						"validation_error": vStderr.String(),
+						"auto_rolled_back": true,
+					},
+				}, nil
+			}
+		}
+
 		return &ExecutionResult{
 			ExitCode: 0,
-			Stdout:   fmt.Sprintf("Configuration written to %s (backup: %s)", cleanPath, backupPath),
+			Stdout:   fmt.Sprintf("Configuration written to %s and validated (backup: %s)", cleanPath, backupPath),
 			Success:  true,
 			Data: map[string]any{
 				"path":        cleanPath,
 				"backup_path": backupPath,
+			},
+		}, nil
+
+	case "rollback_config":
+		backupPath, _ := args["backup_path"].(string)
+		if backupPath == "" {
+			return &ExecutionResult{
+				ExitCode: 1,
+				Stderr:   "missing 'backup_path' argument for rollback_config",
+				Success:  false,
+			}, nil
+		}
+
+		if _, err := os.Stat(backupPath); err != nil {
+			return &ExecutionResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("backup file not found: %s", backupPath),
+				Success:  false,
+			}, nil
+		}
+
+		backupData, err := os.ReadFile(backupPath)
+		if err != nil {
+			return &ExecutionResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("failed to read backup file: %v", err),
+				Success:  false,
+			}, nil
+		}
+
+		if err := os.WriteFile(cleanPath, backupData, 0644); err != nil {
+			return &ExecutionResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("failed to restore backup to %s: %v", cleanPath, err),
+				Success:  false,
+			}, nil
+		}
+
+		// Re-validate if nginx config
+		if strings.Contains(cleanPath, "nginx") {
+			vCmd := exec.CommandContext(ctx, "bash", "-c", "nginx -t")
+			if err := vCmd.Run(); err != nil {
+				return &ExecutionResult{
+					ExitCode: 1,
+					Stderr:   fmt.Sprintf("Restored configuration at %s failed validation: %v", cleanPath, err),
+					Success:  false,
+				}, nil
+			}
+		}
+
+		return &ExecutionResult{
+			ExitCode: 0,
+			Stdout:   fmt.Sprintf("Successfully restored configuration at %s from %s", cleanPath, backupPath),
+			Success:  true,
+			Data: map[string]any{
+				"path":        cleanPath,
+				"backup_path": backupPath,
+				"restored":    true,
 			},
 		}, nil
 

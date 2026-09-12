@@ -206,7 +206,8 @@ func (c *AgentClient) handleExecuteStep(
 ) {
 	log.Printf("[OpsPilot Agent] Executing step %s: action=%s", cmd.StepId, cmd.Action)
 
-	res, err := c.runner.Execute(ctx, cmd.Action, cmd.ArgumentsJson, int(cmd.TimeoutSeconds))
+	executionID := fmt.Sprintf("%s/%s", cmd.TaskId, cmd.StepId)
+	res, err := c.runner.ExecuteWithID(ctx, executionID, cmd.Action, cmd.ArgumentsJson, int(cmd.TimeoutSeconds))
 	if err != nil {
 		log.Printf("[OpsPilot Agent] Execution error for step %s: %v", cmd.StepId, err)
 		res = &executor.StepExecutionResult{

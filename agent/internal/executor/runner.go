@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"opspilot/agent/internal/tools"
 )
 
 type Runner struct {
-	registry *tools.Registry
-	guard    *CommandGuard
+	registry       *tools.Registry
+	guard          *CommandGuard
+	executionCache sync.Map // executionID -> *StepExecutionResult
 }
 
 func NewRunner(registry *tools.Registry, guard *CommandGuard) *Runner {
@@ -35,6 +37,30 @@ type StepExecutionResult struct {
 }
 
 func (r *Runner) Execute(ctx context.Context, action string, argsJSON string, timeoutSec int) (*StepExecutionResult, error) {
+	return r.ExecuteWithID(ctx, "", action, argsJSON, timeoutSec)
+}
+
+func (r *Runner) ExecuteWithID(ctx context.Context, executionID string, action string, argsJSON string, timeoutSec int) (*StepExecutionResult, error) {
+	if executionID != "" {
+		if val, ok := r.executionCache.Load(executionID); ok {
+			cached := val.(*StepExecutionResult)
+			copyData := make(map[string]any)
+			for k, v := range cached.Data {
+				copyData[k] = v
+			}
+			copyData["idempotent"] = true
+			copyData["cached_execution"] = true
+			return &StepExecutionResult{
+				Action:     cached.Action,
+				ExitCode:   cached.ExitCode,
+				Stdout:     cached.Stdout,
+				Stderr:     cached.Stderr,
+				DurationMS: 0,
+				Success:    cached.Success,
+				Data:       copyData,
+			}, nil
+		}
+	}
 	start := time.Now()
 
 	var args map[string]any
@@ -66,7 +92,7 @@ func (r *Runner) Execute(ctx context.Context, action string, argsJSON string, ti
 				Success:    false,
 			}, nil
 		}
-		return &StepExecutionResult{
+		out := &StepExecutionResult{
 			Action:     action,
 			ExitCode:   res.ExitCode,
 			Stdout:     res.Stdout,
@@ -74,7 +100,11 @@ func (r *Runner) Execute(ctx context.Context, action string, argsJSON string, ti
 			DurationMS: duration,
 			Success:    res.Success,
 			Data:       res.Data,
-		}, nil
+		}
+		if executionID != "" && res.Success {
+			r.executionCache.Store(executionID, out)
+		}
+		return out, nil
 	}
 
 	// 2. Handle raw execute_command fallback
@@ -107,14 +137,18 @@ func (r *Runner) Execute(ctx context.Context, action string, argsJSON string, ti
 			}
 		}
 
-		return &StepExecutionResult{
+		out := &StepExecutionResult{
 			Action:     action,
 			ExitCode:   exitCode,
 			Stdout:     stdout.String(),
 			Stderr:     stderr.String(),
 			DurationMS: duration,
 			Success:    exitCode == 0,
-		}, nil
+		}
+		if executionID != "" && exitCode == 0 {
+			r.executionCache.Store(executionID, out)
+		}
+		return out, nil
 	}
 
 	return nil, fmt.Errorf("unsupported action: %s", action)

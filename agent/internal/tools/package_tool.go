@@ -83,6 +83,25 @@ func (t *PackageTool) Execute(ctx context.Context, args map[string]any) (*Execut
 		}, nil
 
 	case "install_package":
+		// Idempotency pre-check: verify if already installed
+		checkCmd := exec.CommandContext(ctx, "dpkg", "-s", pkgName)
+		var checkOut bytes.Buffer
+		checkCmd.Stdout = &checkOut
+		if err := checkCmd.Run(); err == nil && strings.Contains(checkOut.String(), "Status: install ok installed") {
+			return &ExecutionResult{
+				ExitCode: 0,
+				Stdout:   fmt.Sprintf("Package '%s' is already installed (idempotent no-op).", pkgName),
+				Stderr:   "",
+				Success:  true,
+				Data: map[string]any{
+					"package":    pkgName,
+					"installed":  true,
+					"idempotent": true,
+					"status":     "ALREADY_SATISFIED",
+				},
+			}, nil
+		}
+
 		cmd := exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", pkgName)
 		cmd.Env = append(cmd.Environ(), "DEBIAN_FRONTEND=noninteractive")
 		cmd.Stdout = &stdout
