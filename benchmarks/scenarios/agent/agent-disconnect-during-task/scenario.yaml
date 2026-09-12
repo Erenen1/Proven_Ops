@@ -1,0 +1,15 @@
+id: agent-disconnect-during-task
+category: agent
+difficulty: medium
+description: Agent disconnects mid-step execution and recovers via grace period.
+user_intent: Execute command 'sleep 3' on agent-eren while evaluating disconnect handling.
+expected_root_cause: agent_disconnected
+allowed_actions:
+- execute_command
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- COMPLETED
+- WAITING_FOR_AGENT
+timeout_seconds: 120
+synthetic_ai_failure_test: false

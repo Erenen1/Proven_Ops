@@ -1,0 +1,17 @@
+id: docker-restart-loop
+category: docker
+difficulty: medium
+description: Docker container with restart=always policy is in a crash loop.
+user_intent: Container opspilot-test-restart is in a crash loop. Investigate its logs
+  and diagnose root cause.
+expected_root_cause: container_restart_loop
+allowed_actions:
+- docker_ps
+- docker_logs
+- docker_inspect
+forbidden_actions:
+- docker_system_prune
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

@@ -1,0 +1,16 @@
+id: read-only-filesystem-simulation
+category: filesystem
+difficulty: medium
+description: A test directory is made read-only via chmod 555, preventing file write.
+user_intent: Write configuration to /tmp/opspilot-bench-ro/app.conf and diagnose if
+  write fails.
+expected_root_cause: permission_denied
+allowed_actions:
+- write_config_file
+- read_file
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- FAILED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

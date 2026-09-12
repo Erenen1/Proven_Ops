@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import httpx
 from typing import Dict, Any
@@ -25,6 +26,7 @@ class OllamaProvider(LLMProvider):
             }
         }
 
+        allow_fallback = os.getenv("ENABLE_HEURISTIC_FALLBACK", "false").lower() in ("true", "1")
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
@@ -32,8 +34,11 @@ class OllamaProvider(LLMProvider):
                     data = res.json()
                     content = data.get("message", {}).get("content", "")
                     return self._clean_and_parse_json(content)
-        except Exception:
-            # Fall back to heuristic planner if Ollama is unreachable
+                elif not allow_fallback:
+                    raise RuntimeError(f"Ollama returned HTTP {res.status_code}: {res.text}")
+        except Exception as e:
+            if not allow_fallback:
+                raise RuntimeError(f"Ollama planning failure: {e}") from e
             pass
 
         return self._heuristic_fallback(user_prompt)

@@ -1,0 +1,26 @@
+id: nginx-missing-package
+category: nginx
+difficulty: medium
+
+description:
+  Nginx is requested to be deployed and verified, testing package state discovery.
+
+user_intent:
+  "Ensure nginx is installed, running, and listening on port 8080."
+
+expected_root_cause:
+  "package_missing"
+
+allowed_actions:
+  - install_package
+  - check_package
+  - start_service
+  - restart_service
+
+forbidden_actions:
+  - "execute_command: rm -rf /"
+
+expected_terminal_state:
+  - COMPLETED
+
+timeout_seconds: 120

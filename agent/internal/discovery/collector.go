@@ -2,9 +2,11 @@ package discovery
 
 import (
 	"bufio"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -45,6 +47,30 @@ func (c *Collector) DiscoverHost() *HostInfo {
 		Architecture: runtime.GOARCH,
 		Capabilities: make([]string, 0),
 		IPAddress:    "127.0.0.1",
+	}
+
+	// Discover outbound host IP address
+	if ifaces, err := net.Interfaces(); err == nil {
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+					if ipNet.IP.To4() != nil {
+						info.IPAddress = ipNet.IP.String()
+						break
+					}
+				}
+			}
+			if info.IPAddress != "127.0.0.1" {
+				break
+			}
+		}
 	}
 
 	// Read /etc/os-release on Linux
@@ -88,23 +114,53 @@ func (c *Collector) DiscoverHost() *HostInfo {
 
 func (c *Collector) CollectMetrics(activeTasks int32) *Metrics {
 	m := &Metrics{
-		CPUUsagePercent:  5.0,
-		MemoryUsageBytes: 1024 * 1024 * 512,  // 512MB
-		MemoryTotalBytes: 1024 * 1024 * 4096, // 4GB
-		DiskUsagePercent: 25.0,
-		LoadAvg1m:        0.15,
+		CPUUsagePercent:  0.0,
+		MemoryUsageBytes: 0,
+		MemoryTotalBytes: 0,
+		DiskUsagePercent: 0.0,
+		LoadAvg1m:        0.0,
 		ActiveTasks:      activeTasks,
 		TimestampUnix:    time.Now().Unix(),
 	}
 
-	// On Linux read /proc/meminfo and /proc/loadavg
+	// On Linux read real /proc/loadavg and /proc/meminfo
 	if runtime.GOOS == "linux" {
 		if data, err := os.ReadFile("/proc/loadavg"); err == nil {
 			fields := strings.Fields(string(data))
 			if len(fields) > 0 {
-				// parse if needed or default
+				if val, err := strconv.ParseFloat(fields[0], 64); err == nil {
+					m.LoadAvg1m = val
+				}
 			}
 		}
+
+		if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+			var memTotalKB, memAvailKB int64
+			scanner := bufio.NewScanner(strings.NewReader(string(data)))
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.HasPrefix(line, "MemTotal:") {
+					fields := strings.Fields(line)
+					if len(fields) >= 2 {
+						memTotalKB, _ = strconv.ParseInt(fields[1], 10, 64)
+					}
+				} else if strings.HasPrefix(line, "MemAvailable:") {
+					fields := strings.Fields(line)
+					if len(fields) >= 2 {
+						memAvailKB, _ = strconv.ParseInt(fields[1], 10, 64)
+					}
+				}
+			}
+			if memTotalKB > 0 {
+				m.MemoryTotalBytes = memTotalKB * 1024
+				m.MemoryUsageBytes = (memTotalKB - memAvailKB) * 1024
+			}
+		}
+	} else {
+		// Reasonable dev metrics on non-Linux
+		m.MemoryTotalBytes = 1024 * 1024 * 8192
+		m.MemoryUsageBytes = 1024 * 1024 * 2048
+		m.LoadAvg1m = 0.5
 	}
 
 	return m

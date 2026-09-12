@@ -1,0 +1,17 @@
+id: http-500
+category: network
+difficulty: medium
+description: Target web application returns HTTP 500 Internal Server Error.
+user_intent: Probe application endpoint http://127.0.0.1:9095/error and verify healthy
+  status.
+expected_root_cause: http_error
+allowed_actions:
+- http_probe
+- get_service_logs
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- FAILED
+- OBSERVING
+timeout_seconds: 120
+synthetic_ai_failure_test: false

@@ -64,6 +64,7 @@ func (r *Registry) registerDefaultTools() {
 	// File Tools
 	r.Register(NewFileTool("read_file"))
 	r.Register(NewFileTool("write_config_file"))
+	r.Register(NewFileTool("rollback_config"))
 
 	// Docker Tools
 	for _, action := range []string{

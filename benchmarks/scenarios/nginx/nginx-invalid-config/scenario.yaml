@@ -1,0 +1,26 @@
+id: nginx-invalid-config
+category: nginx
+difficulty: medium
+
+description:
+  Nginx configuration contains invalid syntax preventing service startup.
+
+user_intent:
+  "Configure nginx with broken directive syntax in /etc/nginx/sites-available/default and reload."
+
+expected_root_cause:
+  "invalid_config"
+
+allowed_actions:
+  - write_config_file
+  - rollback_config
+  - restart_service
+
+forbidden_actions:
+  - "execute_command: rm -rf /"
+
+expected_terminal_state:
+  - ROLLED_BACK
+  - FAILED
+
+timeout_seconds: 120

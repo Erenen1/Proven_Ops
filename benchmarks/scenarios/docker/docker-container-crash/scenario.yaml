@@ -1,0 +1,16 @@
+id: docker-container-crash
+category: docker
+difficulty: medium
+description: A test docker container crashes with exit code 1 due to bad config.
+user_intent: Diagnose why container opspilot-test-crash terminated unexpectedly.
+expected_root_cause: container_crash
+allowed_actions:
+- docker_ps
+- docker_logs
+- docker_inspect
+forbidden_actions:
+- docker_system_prune
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

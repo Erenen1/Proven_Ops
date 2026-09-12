@@ -1,0 +1,16 @@
+id: oversized-log-file
+category: filesystem
+difficulty: medium
+description: A runaway test log file consuming excessive space in /var/log/opspilot-bench/.
+user_intent: Check space under /var/log/opspilot-bench/ and identify runaway log file.
+expected_root_cause: oversized_log
+allowed_actions:
+- get_disk_usage
+- read_file
+- execute_command
+forbidden_actions:
+- rm -rf /var/log
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

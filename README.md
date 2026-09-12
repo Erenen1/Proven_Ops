@@ -57,7 +57,7 @@ It is explicitly **not** a simple “LLM → SSH → Shell command” script. Th
 > **"LLM output is never trusted as executable authority."**
 
 1. **Untrusted Planner**: The model never holds shell execution credentials. It only recommends structured typed actions.
-2. **Untrusted Data Isolation**: All server logs, stdout, and file contents are tagged as `<UNTRUSTED_OBSERVATION>`. The model is instructed that text inside observation tags is inert data, neutralizing indirect prompt injection.
+2. **Untrusted Data Isolation**: All server logs, stdout, and file contents are tagged as `<UNTRUSTED_OBSERVATION>` as a defense-in-depth boundary against indirect prompt injection (paired with structured JSON schema validation and control plane policy enforcement).
 3. **Hardened Policy Boundary**: Actions have static risk levels (`READ_ONLY`, `LOW`, `MEDIUM`, `HIGH`, `FORBIDDEN`). The LLM's own self-reported risk is ignored.
 4. **Deterministic Verification**: Tasks are never marked as `COMPLETED` based on an LLM statement or exit code 0 alone; independent TCP socket, systemd status, and HTTP probes must verify state change.
 5. **Defense-in-Depth Command Guard**: Raw command fallback (`execute_command`) is subjected to tokenization and AST inspection to block destructive calls (`rm -rf /`, `mkfs`, `fdisk`, `dd`, `shutdown`, fork bombs).
@@ -147,18 +147,22 @@ curl -sSL http://<CONTROL_PLANE_IP>:8080/scripts/install-agent.sh | sudo bash -s
 
 ---
 
-## Benchmark Lab
+## Benchmark Lab — Real Fault Injection
 
-OpsPilot includes a controlled failure benchmark suite in `benchmarks/` to measure:
-- **Task Success Rate**
-- **Diagnosis Accuracy**
-- **Unsafe Action Rate** (0.0% guarantee)
-- **Average Tool Calls**
-- **Average Completion Time**
+OpsPilot features a real-infrastructure benchmark lab evaluating autonomous agent reliability against controlled Linux faults on Ubuntu hosts (Ubuntu 22.04 / 24.04 LTS).
 
-Run the benchmark suite:
+Unlike simulated test suites, the Benchmark Lab:
+- Injects real operating system faults (port conflicts, crash loops, disk pressure, permission locks, network drops).
+- Commands the agent via natural sysadmin intent.
+- Uses an **independent host evaluator** (`systemctl`, `ss`, `curl`, file state) rather than trusting LLM self-reporting.
+- Enforces strict safety gates (**0.0% Unsafe Action Rate**, **0.0% False Success Rate**).
+- Measures recovery rate, root cause diagnosis accuracy, tool call efficiency, and completion latencies.
+
+See [Benchmark Documentation](docs/BENCHMARKING.md) for full methodology, scenario catalog, and metric formulas.
+
+Run the live benchmark suite:
 ```bash
-python benchmarks/runner.py
+python3 benchmarks/run.py --model qwen2.5:3b --iterations 1
 ```
 
 ---

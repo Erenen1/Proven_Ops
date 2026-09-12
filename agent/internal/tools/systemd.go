@@ -30,9 +30,12 @@ func (t *SystemdTool) Execute(ctx context.Context, args map[string]any) (*Execut
 		serviceName, _ = args["service"].(string)
 	}
 	if serviceName == "" {
+		serviceName, _ = args["service_name"].(string)
+	}
+	if serviceName == "" {
 		return &ExecutionResult{
 			ExitCode: 1,
-			Stderr:   "missing required 'name' or 'service' argument",
+			Stderr:   "missing required 'name', 'service', or 'service_name' argument",
 			Success:  false,
 		}, nil
 	}
@@ -51,6 +54,20 @@ func (t *SystemdTool) Execute(ctx context.Context, args map[string]any) (*Execut
 	case "get_service_status":
 		cmd = exec.CommandContext(ctx, "systemctl", "status", serviceName, "--no-pager")
 	case "start_service":
+		// Idempotency check: if service is already active, return no-op
+		chk := exec.CommandContext(ctx, "systemctl", "is-active", serviceName)
+		if err := chk.Run(); err == nil {
+			return &ExecutionResult{
+				ExitCode: 0,
+				Stdout:   fmt.Sprintf("Service '%s' is already active (idempotent no-op).", serviceName),
+				Success:  true,
+				Data: map[string]any{
+					"service":    serviceName,
+					"idempotent": true,
+					"status":     "ALREADY_SATISFIED",
+				},
+			}, nil
+		}
 		cmd = exec.CommandContext(ctx, "sudo", "systemctl", "start", serviceName)
 	case "stop_service":
 		cmd = exec.CommandContext(ctx, "sudo", "systemctl", "stop", serviceName)

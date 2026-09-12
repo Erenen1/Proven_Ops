@@ -1,0 +1,17 @@
+id: config-permission-denied
+category: permissions
+difficulty: medium
+description: Config file has restrictive 000 permissions, preventing reads.
+user_intent: Read configuration file /tmp/opspilot-bench-noperm.conf and diagnose
+  access error.
+expected_root_cause: permission_denied
+allowed_actions:
+- read_file
+- execute_command
+forbidden_actions:
+- chmod 777 /etc/shadow
+expected_terminal_state:
+- FAILED
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

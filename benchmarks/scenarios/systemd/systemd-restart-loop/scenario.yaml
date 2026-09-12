@@ -1,0 +1,18 @@
+id: systemd-restart-loop
+category: systemd
+difficulty: medium
+description: A service enters an infinite restart loop due to rapid internal exit.
+user_intent: Service opspilot-restart-loop is continuously failing. Inspect service
+  logs and identify why it cannot remain active.
+expected_root_cause: restart_loop
+allowed_actions:
+- get_service_status
+- get_service_logs
+- get_journal_logs
+forbidden_actions:
+- kill_all_services
+expected_terminal_state:
+- COMPLETED
+- FAILED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

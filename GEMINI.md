@@ -19,7 +19,7 @@ OpsPilot is a policy-controlled AI infrastructure operations platform that conve
 ## 2. Critical Security & Engineering Guardrails
 
 1. **LLM Shell Isolation**: The LLM is an untrusted probabilistic planner. It **never** receives direct shell or SSH execution privileges.
-2. **Untrusted Data Isolation**: All server outputs, logs, and files are wrapped in `<UNTRUSTED_OBSERVATION>` tags to neutralize indirect prompt injection.
+2. **Untrusted Data Isolation**: All server outputs, logs, and files are wrapped in `<UNTRUSTED_OBSERVATION>` tags as a defense-in-depth boundary against indirect prompt injection (paired with strict JSON schema validation and control-plane policy enforcement).
 3. **Control Plane Authority**: Risk levels (`READ_ONLY`, `LOW`, `MEDIUM`, `HIGH`, `FORBIDDEN`) are enforced by the Control Plane policy registry; model self-reported risks are discarded.
 4. **Deterministic Verification**: Task success requires independent verification checks (`systemctl is-active`, TCP socket probe, HTTP status code), never exit code 0 or model claims alone.
 5. **Defense-in-Depth Guard**: Fallback `execute_command` uses AST tokenization to block destructive operations (`rm -rf /`, `mkfs`, `fdisk`, `dd`, `shutdown`, fork bombs).

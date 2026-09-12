@@ -21,8 +21,8 @@ dist/
 *.dll
 *.so
 *.dylib
-opspilot-agent
-control-plane
+/bin/opspilot-agent
+/bin/control-plane
 
 # Go
 apps/control-plane/bin/

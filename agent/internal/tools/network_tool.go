@@ -46,7 +46,13 @@ func (t *NetworkTool) Execute(ctx context.Context, args map[string]any) (*Execut
 func (t *NetworkTool) checkPort(ctx context.Context, args map[string]any) (*ExecutionResult, error) {
 	portVal := args["port"]
 	if portVal == nil {
-		return &ExecutionResult{ExitCode: 1, Stderr: "missing 'port' argument", Success: false}, nil
+		portVal = args["port_number"]
+	}
+	if portVal == nil {
+		portVal = args["port_num"]
+	}
+	if portVal == nil {
+		return &ExecutionResult{ExitCode: 1, Stderr: "missing 'port' or 'port_number' argument", Success: false}, nil
 	}
 
 	port := fmt.Sprintf("%v", portVal)

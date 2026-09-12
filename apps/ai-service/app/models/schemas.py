@@ -20,7 +20,7 @@ class StepPlan(BaseModel):
     action: str = Field(..., description="Typed action name, e.g. install_package, restart_service")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Arguments for the typed tool")
     reason: str = Field(..., description="Brief explanation of why this step is necessary")
-    suggested_risk: RiskLevel = Field(default=RiskLevel.LOW, description="Model suggested risk level (overridden by Control Plane)")
+    suggested_risk: Optional[str] = Field(default="LOW", description="Model suggested risk level (overridden by Control Plane)")
     verification_strategy: Optional[VerificationRequirement] = Field(None, description="Deterministic verification check for this step")
 
 class HostContext(BaseModel):

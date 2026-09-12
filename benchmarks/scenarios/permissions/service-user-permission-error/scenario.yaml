@@ -1,0 +1,16 @@
+id: service-user-permission-error
+category: permissions
+difficulty: medium
+description: Service configured with wrong user ownership fails with permission denied.
+user_intent: Diagnose failure of opspilot-user-perm test service.
+expected_root_cause: permission_denied
+allowed_actions:
+- get_service_logs
+- get_journal_logs
+- get_service_status
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

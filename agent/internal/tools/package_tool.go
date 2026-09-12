@@ -30,9 +30,15 @@ func (t *PackageTool) Execute(ctx context.Context, args map[string]any) (*Execut
 		pkgName, _ = args["package"].(string)
 	}
 	if pkgName == "" {
+		pkgName, _ = args["package_name"].(string)
+	}
+	if pkgName == "" {
+		pkgName, _ = args["pkg"].(string)
+	}
+	if pkgName == "" {
 		return &ExecutionResult{
 			ExitCode: 1,
-			Stderr:   "missing required 'name' or 'package' argument",
+			Stderr:   "missing required package argument (name/package/package_name)",
 			Success:  false,
 		}, nil
 	}
@@ -48,47 +54,95 @@ func (t *PackageTool) Execute(ctx context.Context, args map[string]any) (*Execut
 		}
 	}
 
-	var cmd *exec.Cmd
+	var stdout, stderr bytes.Buffer
+
 	switch t.action {
 	case "check_package":
-		cmd = exec.CommandContext(ctx, "dpkg", "-s", pkgName)
+		cmd := exec.CommandContext(ctx, "dpkg", "-s", pkgName)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		exitCode := 0
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			} else {
+				exitCode = 1
+			}
+		}
+		isInstalled := (exitCode == 0 && strings.Contains(stdout.String(), "Status: install ok installed"))
+		return &ExecutionResult{
+			ExitCode: exitCode,
+			Stdout:   stdout.String(),
+			Stderr:   stderr.String(),
+			Success:  isInstalled,
+			Data: map[string]any{
+				"package":   pkgName,
+				"installed": isInstalled,
+			},
+		}, nil
+
 	case "install_package":
-		// DEBIAN_FRONTEND=noninteractive sudo apt-get install -y <pkg>
-		cmd = exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", pkgName)
+		// Idempotency pre-check: verify if already installed
+		checkCmd := exec.CommandContext(ctx, "dpkg", "-s", pkgName)
+		var checkOut bytes.Buffer
+		checkCmd.Stdout = &checkOut
+		if err := checkCmd.Run(); err == nil && strings.Contains(checkOut.String(), "Status: install ok installed") {
+			return &ExecutionResult{
+				ExitCode: 0,
+				Stdout:   fmt.Sprintf("Package '%s' is already installed (idempotent no-op).", pkgName),
+				Stderr:   "",
+				Success:  true,
+				Data: map[string]any{
+					"package":    pkgName,
+					"installed":  true,
+					"idempotent": true,
+					"status":     "ALREADY_SATISFIED",
+				},
+			}, nil
+		}
+
+		cmd := exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", pkgName)
 		cmd.Env = append(cmd.Environ(), "DEBIAN_FRONTEND=noninteractive")
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+
+		if err != nil {
+			// If failed (e.g. stale package index 404), update cache and retry once
+			updateCmd := exec.CommandContext(ctx, "sudo", "apt-get", "update")
+			_ = updateCmd.Run()
+
+			stdout.Reset()
+			stderr.Reset()
+			retryCmd := exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", pkgName)
+			retryCmd.Env = append(retryCmd.Environ(), "DEBIAN_FRONTEND=noninteractive")
+			retryCmd.Stdout = &stdout
+			retryCmd.Stderr = &stderr
+			err = retryCmd.Run()
+		}
+
+		exitCode := 0
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			} else {
+				exitCode = 1
+			}
+		}
+
+		return &ExecutionResult{
+			ExitCode: exitCode,
+			Stdout:   stdout.String(),
+			Stderr:   stderr.String(),
+			Success:  exitCode == 0,
+			Data: map[string]any{
+				"package":   pkgName,
+				"installed": exitCode == 0,
+			},
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown package action: %s", t.action)
 	}
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			exitCode = 1
-		}
-	}
-
-	isInstalled := false
-	if t.action == "check_package" && exitCode == 0 && strings.Contains(stdout.String(), "Status: install ok installed") {
-		isInstalled = true
-	} else if t.action == "install_package" && exitCode == 0 {
-		isInstalled = true
-	}
-
-	return &ExecutionResult{
-		ExitCode: exitCode,
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
-		Success:  exitCode == 0,
-		Data: map[string]any{
-			"package":   pkgName,
-			"installed": isInstalled,
-		},
-	}, nil
 }

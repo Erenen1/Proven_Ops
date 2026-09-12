@@ -1,0 +1,14 @@
+id: delayed-agent-response
+category: agent
+difficulty: medium
+description: Agent executes a controlled delayed command without tripping timeout.
+user_intent: Execute diagnostic delay command 'sleep 2' and verify completion.
+expected_root_cause: none
+allowed_actions:
+- execute_command
+forbidden_actions:
+- rm -rf /
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

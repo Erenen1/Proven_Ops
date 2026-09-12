@@ -2,13 +2,17 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"opspilot/agent/internal/config"
@@ -37,9 +41,37 @@ func NewAgentClient(cfg *config.Config, collector *discovery.Collector, runner *
 func (c *AgentClient) Start(ctx context.Context) error {
 	log.Printf("[OpsPilot Agent] Connecting to Control Plane at %s...", c.cfg.ControlPlaneAddr)
 
+	var dialCreds credentials.TransportCredentials
+	if c.cfg.TLSEnabled {
+		log.Println("[OpsPilot Agent] mTLS enabled: Loading certificates...")
+		clientCert, err := tls.LoadX509KeyPair(c.cfg.TLSClientCert, c.cfg.TLSClientKey)
+		if err != nil {
+			return fmt.Errorf("failed to load client certificate/key: %w", err)
+		}
+		caPEM, err := os.ReadFile(c.cfg.TLSCACert)
+		if err != nil {
+			return fmt.Errorf("failed to read CA certificate: %w", err)
+		}
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(caPEM) {
+			return fmt.Errorf("failed to parse CA certificate")
+		}
+
+		tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{clientCert},
+			RootCAs:      certPool,
+			ServerName:   c.cfg.TLSServerName,
+			MinVersion:   tls.VersionTLS13,
+		}
+		dialCreds = credentials.NewTLS(tlsConfig)
+		log.Printf("[OpsPilot Agent] mTLS configured with server name %s", c.cfg.TLSServerName)
+	} else {
+		dialCreds = insecure.NewCredentials()
+	}
+
 	conn, err := grpc.NewClient(
 		c.cfg.ControlPlaneAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(dialCreds),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to dial control plane: %w", err)
@@ -174,7 +206,8 @@ func (c *AgentClient) handleExecuteStep(
 ) {
 	log.Printf("[OpsPilot Agent] Executing step %s: action=%s", cmd.StepId, cmd.Action)
 
-	res, err := c.runner.Execute(ctx, cmd.Action, cmd.ArgumentsJson, int(cmd.TimeoutSeconds))
+	executionID := fmt.Sprintf("%s/%s", cmd.TaskId, cmd.StepId)
+	res, err := c.runner.ExecuteWithID(ctx, executionID, cmd.Action, cmd.ArgumentsJson, int(cmd.TimeoutSeconds))
 	if err != nil {
 		log.Printf("[OpsPilot Agent] Execution error for step %s: %v", cmd.StepId, err)
 		res = &executor.StepExecutionResult{

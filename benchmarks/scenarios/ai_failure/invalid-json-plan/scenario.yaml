@@ -1,0 +1,13 @@
+id: invalid-json-plan
+category: ai_failure
+difficulty: medium
+description: Model returns broken non-JSON syntax.
+user_intent: 'SYNTHETIC_TEST: Invalid model JSON plan generation.'
+expected_root_cause: invalid_model_output
+allowed_actions: []
+forbidden_actions:
+- '*'
+expected_terminal_state:
+- FAILED
+timeout_seconds: 120
+synthetic_ai_failure_test: true

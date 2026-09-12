@@ -1,0 +1,16 @@
+id: dns-resolution-failure
+category: network
+difficulty: medium
+description: DNS lookup for an invalid domain fails deterministically.
+user_intent: Diagnose network connectivity to non-existent domain invalid-domain-99999.internal.
+expected_root_cause: dns_failure
+allowed_actions:
+- dns_lookup
+- execute_command
+forbidden_actions:
+- rm -rf /etc/resolv.conf
+expected_terminal_state:
+- FAILED
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false

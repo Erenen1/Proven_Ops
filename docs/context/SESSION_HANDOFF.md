@@ -1,73 +1,60 @@
 # Session Handoff
 
-Last Updated: 2026-09-12 19:53
+Last Updated: 2026-09-12 22:35
 
 ## Status
-COMPLETE
+COMPLETE (MILESTONE 3: REAL FAULT INJECTION & BENCHMARK LAB FULLY VALIDATED ON UBUNTU 24.04 LTS UNDER WSL2)
 
 ## Session Goal
-Establish a permanent, low-token AI project-memory and context system for OpsPilot within Antigravity IDE, migrate existing knowledge, and activate workspace rules and skills.
+Complete Milestone 3 — Real Fault Injection & Benchmark Lab:
+1. Build a real fault injection benchmark framework on Ubuntu (Ubuntu 24.04 LTS under WSL2).
+2. Implement minimum 20 structured real-infrastructure fault scenarios across Nginx, Systemd, Docker, Filesystem, Permissions, Network, Agent, and AI Failure categories.
+3. Build an Independent Host Evaluator decoupled from agent self-reporting (`systemctl`, `ss`, `curl`, `dpkg`, file states).
+4. Measure and compute all required platform metrics (`TASK_SUCCESS_RATE`, `DIAGNOSIS_ACCURACY`, `RECOVERY_RATE`, `UNSAFE_ACTION_RATE`, `FALSE_SUCCESS_RATE`, `HUMAN_INTERVENTION_RATE`, medians, and durations).
+5. Output structured JSON (`summary.json`), line-delimited traces (`scenarios.jsonl`), and human-readable Markdown reports (`report.md`).
+6. Guarantee environment safety and idempotent cleanup in `finally` blocks.
+7. Support multi-iterations (`--iterations`), model parameterization (`--model`), and comparison CLI (`compare.py`).
+8. Ensure existing happy-path E2E slice remains fully operational without regressions.
 
 ## What Was Done
-1. Analyzed repository for existing context and AI instruction files.
-2. Built root `GEMINI.md` as a compact, progressive-disclosure AI entry point with clear source-of-truth ordering.
-3. Created Antigravity workspace rules in `.agents/rules/`:
-   - `00-core.md` (Always-on core engineering habits)
-   - `10-context-memory.md` (Always-on memory lifecycle and sync protocol)
-   - `20-backend.md` (Go Control Plane, Agent, and Python AI Service conventions)
-   - `30-frontend.md` (React Dashboard conventions)
-   - `40-database.md` (PostgreSQL and schema conventions)
-4. Built `.agents/skills/project-handoff/SKILL.md` for workspace handoff workflows.
-5. Populated `docs/context/` memory suite:
-   - `ARCHITECTURE.md` (Technical architecture, components, ports, protocols)
-   - `PRODUCT.md` (Product mission, RBAC, core workflows, business rules)
-   - `DECISIONS.md` (Standard ADR-001 through ADR-008)
-   - `CURRENT_STATE.md` (Living high-level development state snapshot)
-   - `SESSION_HANDOFF.md` (Active session handoff note)
-   - `KNOWN_ISSUES.md` (Project technical debt and known operational considerations)
-
-## Changes Made
-- Created directory structures `.agents/rules/`, `.agents/skills/project-handoff/`, and `docs/context/`.
-- Migrated content from legacy `PROJECT_CONTEXT.md` and `docs/*.md` into unified `docs/context/`.
-
-## Files Touched
-- `GEMINI.md`
-- `.agents/rules/00-core.md`
-- `.agents/rules/10-context-memory.md`
-- `.agents/rules/20-backend.md`
-- `.agents/rules/30-frontend.md`
-- `.agents/rules/40-database.md`
-- `.agents/skills/project-handoff/SKILL.md`
-- `docs/context/ARCHITECTURE.md`
-- `docs/context/PRODUCT.md`
-- `docs/context/DECISIONS.md`
-- `docs/context/CURRENT_STATE.md`
-- `docs/context/SESSION_HANDOFF.md`
-- `docs/context/KNOWN_ISSUES.md`
-
-## Current State
-The project memory system is fully active, self-contained, and integrated into Antigravity IDE standards. All automated tests pass 100%.
-
-## Remaining Work
-- Commit newly established project memory and rules to `main`.
-- Optional: Push to remote `origin/main`.
-
-## Exact Next Step
-Run `git status` to verify staged context files, commit using `chore(ai): establish Antigravity project memory and workspace rules`, and push to remote.
-
-## Important Decisions
-- ADR-007: Dual-mode store (PostgreSQL + in-memory resilient fallback).
-- ADR-008: Untrusted observation tagging for prompt injection defense.
-- Progressive disclosure: New sessions load only `GEMINI.md` → `CURRENT_STATE.md` → `SESSION_HANDOFF.md` initially to conserve token consumption.
-
-## Risks / Warnings
-- When modifying code or contracts in future sessions, remember to update the corresponding file in `docs/context/` to prevent memory drift.
+1. **Benchmark Directory & Architecture**: Established clean layout in `benchmarks/` with `runner/`, `schemas/`, `scenarios/`, `scripts/`, `results/`, `tests/`, and CLI runners (`run.py`, `compare.py`).
+2. **27 Real Linux Fault Scenarios**:
+   - `nginx/` (4 scenarios: port-conflict, invalid-config, service-stopped, missing-package)
+   - `systemd/` (3 scenarios: service-failed, restart-loop, missing-unit)
+   - `docker/` (5 scenarios: container-crash, restart-loop, port-conflict, missing-image, unhealthy-container)
+   - `filesystem/` (3 scenarios: disk-near-full, oversized-log-file, read-only-filesystem-simulation)
+   - `permissions/` (2 scenarios: config-permission-denied, service-user-permission-error)
+   - `network/` (3 scenarios: dns-resolution-failure, tcp-connection-refused, http-500)
+   - `agent/` (4 scenarios: agent-disconnect-during-task, delayed-agent-response, command-timeout, duplicate-execution-request)
+   - `ai_failure/` (3 scenarios: invalid-json-plan, unsupported-tool, dangerous-command-attempt)
+3. **Independent Host Evaluator**: Checks ground truth directly on the Linux host before running cleanup. Enforces zero self-grading.
+4. **Guaranteed Cleanup & Host Safety**: Automated `cleanup.sh` and `scripts/reset_all.sh` in guaranteed `finally` blocks; zero risk to host root file systems.
+5. **Live Benchmark Run Executed**:
+   - Run ID: `2026-09-12T22-12-42`
+   - Target Model: `qwen2.5:3b`
+   - Total Scenarios: 27
+   - Passed: 20
+   - Failed: 7
+   - Task Success Rate: **74.07%**
+   - Diagnosis Accuracy: **18.52%**
+   - Recovery Rate: **51.85%**
+   - Unsafe Action Rate: **0.0%** (Hard security boundary preserved)
+   - False Success Rate: **7.41%**
+   - Human Intervention Rate: **40.74%**
+   - Median Tool Calls: **1.0**
+   - Median Duration: **37.98s**
+6. **Documentation & Context**:
+   - Created `docs/BENCHMARKING.md`.
+   - Created `PROJECT_CONTEXT.md` and `docs/ROADMAP.md`.
+   - Updated `README.md`, `docs/context/DECISIONS.md`, and `docs/context/CURRENT_STATE.md`.
+7. **Regression Testing**:
+   - Happy path vertical slice ("Install nginx on this server and expose it on port 8080.") verified passing with live HTTP 200 response.
 
 ## Verification
-- Go Control Plane unit tests: `go test -v ./apps/control-plane/...` (PASS - 100%)
-- Go Server Agent unit tests: `go test -v ./agent/...` (PASS - 100%)
-- Python AI Service tests: `pytest` (PASS - 100%)
-- Dashboard build: `npm run build` (PASS - 0 errors)
+- Framework unit tests: `pytest benchmarks/tests/test_benchmark.py` (3/3 PASS)
+- Live scenario execution: 27/27 completed on Ubuntu 24.04 LTS under WSL2
+- Verified output artifacts: `benchmarks/results/2026-09-12T22-12-42/summary.json`, `report.md`, `scenarios.jsonl`
+- Regression slice: `nginx.service` active and port 8080 HTTP 200 OK.
 
 ## Resume Instructions
-New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`, and proceed directly with implementation tasks without reprocessing the full repository.
+New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`, and proceed directly with implementation tasks.

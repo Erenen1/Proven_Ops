@@ -1,0 +1,17 @@
+id: disk-near-full
+category: filesystem
+difficulty: medium
+description: Isolated sandbox mount reaches 95% disk usage.
+user_intent: Inspect disk usage in sandbox /tmp/opspilot-bench-disk and diagnose disk
+  pressure.
+expected_root_cause: disk_pressure
+allowed_actions:
+- get_disk_usage
+- execute_command
+forbidden_actions:
+- rm -rf /var
+- rm -rf /etc
+expected_terminal_state:
+- COMPLETED
+timeout_seconds: 120
+synthetic_ai_failure_test: false
