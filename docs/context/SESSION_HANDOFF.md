@@ -3,70 +3,50 @@
 Last Updated: 2026-09-12 20:25
 
 ## Status
-COMPLETE (MILESTONE 2: FAILURE-TOLERANT AGENT EXECUTION VALIDATED ON UBUNTU 24.04)
+COMPLETE (MILESTONE 2 & 2.1: FAILURE-TOLERANT EXECUTION & HARDENING PASS VALIDATED ON UBUNTU 24.04 LTS UNDER WSL2)
 
 ## Session Goal
-Implement and rigorously prove Milestone 2 — Failure-Tolerant Agent Execution on OpsPilot without expanding scope to unsupported platforms:
-1. Failure Classification (12 structured failure types).
-2. Anti-Side-Effect Retry Policy.
-3. Controlled & Bounded Replanning (`MAX_REPLANS = 3`, `plan_version` incrementing, approval invalidation, strict intent integrity: 8080 never mutated to 8081).
-4. Transactional Configuration & Verified Rollback Compensation (`BACKUP` -> `APPLY` -> `VALIDATE (nginx -t)` -> `RESTORE` -> `VERIFY ORIGINAL STATE` -> `ROLLED_BACK`).
-5. Multi-Layer Idempotency (API `Idempotency-Key` unique constraint, Agent step execution cache `task_id/step_id/attempt`, tool pre-checks `ALREADY_SATISFIED`).
-6. Agent Disconnection Handling (`WAITING_FOR_AGENT` grace period, re-observe before resume).
-7. Live Ubuntu 24.04 Demonstration of 6 Failure Scenarios & Happy-Path Regression Test.
+Complete Milestone 2 and perform Milestone 2.1 Hardening Pass:
+1. Failure Classification (13 structured failure types, including `UNCERTAIN_EXECUTION`).
+2. Persistent Execution Ledger via embedded `bbolt` KV store (`/var/lib/opspilot/execution_ledger.db`).
+3. Uncertain Execution Recovery with operation-specific observation before retry.
+4. AI Failure Boundary Isolation (`MalformedPlanProvider`, `UnsupportedToolProvider`, `ForbiddenActionProvider`).
+5. Configurable Task Bounds (`MAX_REPLANS = 3`, `MAX_TOOL_CALLS = 20`, `MAX_TOTAL_TASK_DURATION = 10m`).
+6. Precision documentation fixes (Ubuntu 24.04 LTS under WSL2, Nginx config rollback scope).
+7. Secrets & Git Repository Hygiene.
 
 ## What Was Done
-1. Database Migration: Created and ran `db/migrations/002_failure_recovery.sql` adding `idempotency_key`, `replan_count`, `max_replans`, `failure_details` to `tasks` and `execution_id` to `task_steps`.
-2. Core Models & State Machine: Added failure taxonomy enum, structured failure structs, and new transitions (`ROLLING_BACK`, `ROLLED_BACK`, `ROLLBACK_FAILED`, `WAITING_FOR_AGENT`). Unit tests passed 100%.
-3. Failure Classification & Retry: Built `failures.ClassifyExecutionFailure` and `failures.RetryPolicy` restricting retries to transient/read-only ops. Unit tests passed 100%.
-4. Agent Tools & Idempotency: Implemented execution cache (`sync.Map`), tool idempotency pre-checks in `package_tool.go`, `file_tool.go`, and `service_tool.go`, automatic backup and syntax check revert in `file_tool.go`, and `rollback_config` tool action.
-5. API Idempotency: Handled `Idempotency-Key` in router returning HTTP 200 with existing task and `IDEMPOTENT_NO_OP` audit event.
-6. Replanning with Intent Integrity: Enforced bounded replanning (`MAX_REPLANS = 3`), plan versioning, approval invalidation, and strict prompt boundaries forbidding silent port alteration.
-7. Agent Disconnect Stream Handling: Instant detection on severed gRPC stream with 15s grace period and safe re-observation.
-8. Controlled Live Tests on Ubuntu 24.04:
-   - Scenario A (Port Conflict & Intent Integrity): Port 8080 pre-bound to Python; Nginx start failed with `RESOURCE_CONFLICT`; AI replanned to inspect port without mutating to 8081; plan bumped to v2; approval invalidated.
-   - Scenario B (Invalid Nginx Config & Rollback): Injected syntax error; `nginx -t` failed; auto-reverted to backup; verified Nginx remained active; task transitioned to `ROLLED_BACK`.
-   - Scenario C (Idempotent Package Install): Requested existing package; detected `dpkg -s`; returned `ALREADY_SATISFIED` (`IDEMPOTENT_NO_OP`); completed without reinstall.
-   - Scenario D (Duplicate API Request): Identical `Idempotency-Key` returned existing task; prevented second execution; logged `IDEMPOTENT_NO_OP`.
-   - Scenario E (Verification Failure): Command success with verification failure transitioned to `OBSERVING` -> `REPLANNING` (never `COMPLETED`).
-   - Scenario F (Agent Disconnect): Agent killed mid-execution; transitioned to `WAITING_FOR_AGENT`; reconnected; re-observed and resumed cleanly.
-   - Regression Test: Happy path ("Install nginx on this server and expose it on port 8080.") completed with HTTP 200 verified.
-9. Documentation: Created `docs/FAILURE_RECOVERY.md`, updated `docs/context/DECISIONS.md` (ADR-009 through ADR-012), `CURRENT_STATE.md`, and `VALIDATION_REPORT.md`.
+1. Persistent Execution Ledger: Replaced in-memory `sync.Map` with `bbolt` persistent store in `agent/internal/executor/ledger.go`. Records `RECEIVED`, `RUNNING`, `SUCCEEDED`, `FAILED`, and `UNKNOWN`.
+2. Uncertain Outcome Recovery: Implemented `handleUncertainExecution` in orchestrator. Probes host ground truth (`dpkg -s`, `systemctl is-active`, file SHA256) and logs `IDEMPOTENT_RECOVERED` without blind re-execution.
+3. Mutating Disconnect Validation: Successfully validated agent kill mid-mutation; persistent ledger created and recovered; target verified.
+4. AI Failure Boundary Isolation: Added unit tests in `apps/control-plane/internal/orchestrator/orchestrator_test.go` proving malformed JSON, hallucinated tools, and destructive commands are blocked before agent execution.
+5. Task Execution Limits: Added `maxToolCalls` and `maxTaskDuration` enforcement and unit tests in `orchestrator.go`.
+6. Documentation Accuracy: Updated `CURRENT_STATE.md`, `FAILURE_RECOVERY.md`, and `VALIDATION_REPORT.md` to specify "Ubuntu 24.04 LTS under WSL2" and define the Nginx config rollback scope.
+7. Secrets Hygiene: Verified that zero private keys, certificates, or `.env` files are tracked in git history.
+8. Regression Suite: All unit and integration tests passed across `control-plane` and `agent`.
 
 ## Files Touched
-- `db/migrations/002_failure_recovery.sql` (NEW)
-- `apps/control-plane/internal/models/models.go`
-- `apps/control-plane/internal/database/db.go`
-- `apps/control-plane/internal/database/postgres.go`
-- `apps/control-plane/internal/statemachine/statemachine.go`
-- `apps/control-plane/internal/statemachine/statemachine_test.go`
-- `apps/control-plane/internal/failures/failure.go` (NEW)
-- `apps/control-plane/internal/failures/retry.go` (NEW)
-- `apps/control-plane/internal/failures/failure_test.go` (NEW)
-- `apps/control-plane/internal/grpcserver/server.go`
-- `apps/control-plane/internal/orchestrator/orchestrator.go`
-- `apps/control-plane/internal/api/router.go`
+- `agent/go.mod` & `agent/go.sum`
+- `agent/internal/executor/ledger.go` (NEW)
 - `agent/internal/executor/runner.go`
-- `agent/internal/executor/runner_test.go` (NEW)
-- `agent/internal/client/grpc_client.go`
-- `agent/internal/tools/package_tool.go`
-- `agent/internal/tools/file_tool.go`
-- `agent/internal/tools/service_tool.go`
-- `agent/internal/tools/registry.go`
-- `agent/internal/tools/tools_test.go`
-- `apps/ai-service/app/prompts/planner.py`
-- `docs/FAILURE_RECOVERY.md` (NEW)
-- `docs/context/DECISIONS.md`
+- `agent/internal/executor/runner_test.go`
+- `apps/control-plane/internal/models/models.go`
+- `apps/control-plane/internal/failures/failure.go`
+- `apps/control-plane/internal/orchestrator/orchestrator.go`
+- `apps/control-plane/internal/orchestrator/orchestrator_test.go` (NEW)
+- `docs/FAILURE_RECOVERY.md`
+- `docs/VALIDATION_REPORT.md`
 - `docs/context/CURRENT_STATE.md`
 - `docs/context/SESSION_HANDOFF.md`
-- `docs/VALIDATION_REPORT.md`
 
 ## Verification
-- Go Control Plane unit tests: `go test -v ./...` (PASS - 100%)
-- Go Server Agent unit tests: `go test -v ./...` (PASS - 100%)
-- Python AI Service tests: `python -m pytest` (PASS - 100%)
-- Live Ubuntu 24.04 Scenarios A-F: Verified live on real Ubuntu host with database audit logs.
-- Regression Slice: `COMPLETED` with verified HTTP 200 response on port 8080.
+- Go Control Plane unit tests: `go test -v ./...` (All executed tests passed)
+- Go Server Agent unit tests: `go test -v ./...` (All executed tests passed)
+- AI boundary isolation tests: `TestAIFailureIsolation` (PASS)
+- Execution bounds tests: `TestExecutionBounds_MaxToolCalls`, `TestExecutionBounds_MaxDuration` (PASS)
+- Persistent ledger restart & uncertain outcome tests: `TestPersistentLedgerProcessRestart`, `TestPersistentLedgerUncertainExecution` (PASS)
+- Live WSL2 Scenarios A-F & Mutating Disconnect: Verified live on Ubuntu 24.04 LTS under WSL2.
+- Regression slice: `COMPLETED` with verified HTTP 200 on port 8080.
 
 ## Resume Instructions
 New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`, and proceed directly with implementation tasks without reprocessing the full repository.

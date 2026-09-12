@@ -79,6 +79,9 @@ When a non-retryable failure occurs, the task state machine transitions:
 
 ## 4. Transactional Configuration & Rollback Compensation
 
+> [!NOTE]
+> **Rollback Scope**: Transactional config rollback is currently validated for Nginx configuration workflows.
+
 Config file changes follow a transactional lifecycle:
 `Backup` → `Write` → `Validate (nginx -t)` → `Revert on Failure` → `Independent Verification` → `ROLLED_BACK`
 
@@ -93,7 +96,7 @@ Config file changes follow a transactional lifecycle:
 
 ---
 
-## 5. Multi-Layer Idempotency
+## 5. Multi-Layer Idempotency & Persistent Execution Ledger
 
 OpsPilot implements idempotency across three architectural tiers:
 
@@ -102,9 +105,13 @@ OpsPilot implements idempotency across three architectural tiers:
 - PostgreSQL enforces a unique constraint on `tasks(idempotency_key)`.
 - If an identical key is sent, the API returns HTTP 200 with the existing task and logs an `IDEMPOTENT_NO_OP` (`duplicate_request_prevented`) audit event. No secondary infrastructure task is scheduled.
 
-### Tier 2: Agent Step Execution Cache
+### Tier 2: Agent Persistent Step Execution Ledger (`bbolt`)
 - Every dispatched step receives an execution ID: `<task_id>/<step_id>/<attempt>`.
-- The agent executor maintains an execution cache (`sync.Map`). If network retransmits the same step execution request, the agent returns the cached result without repeating the underlying side effect.
+- The agent maintains an embedded, persistent `bbolt` KV store at `/var/lib/opspilot/execution_ledger.db`.
+- **Execution States**:
+  - `RECEIVED` / `RUNNING`: Dispatched but incomplete.
+  - `SUCCEEDED`: Stored with final execution output. If the agent restarts and receives the same execution ID, it returns the cached result without repeating the underlying side effect.
+  - `UNKNOWN` (`UNCERTAIN_EXECUTION`): If the agent process crashes mid-mutation, upon restart the record is converted to `UNKNOWN`. The agent refuses blind re-execution of mutating operations, returning `UNCERTAIN_EXECUTION`. The Control Plane transitions to `OBSERVING`, executes operation-specific ground truth inspection (`dpkg -s`, `systemctl is-active`, SHA256 hash match), and logs `IDEMPOTENT_RECOVERED` if already satisfied.
 
 ### Tier 3: Tool-Level Idempotency Pre-Checks
 - `install_package`: Checks `dpkg -s <package>`. If installed, returns `ALREADY_SATISFIED` (`idempotent: true`).

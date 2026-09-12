@@ -80,9 +80,9 @@ A comprehensive architectural and source code audit was conducted on OpsPilot. T
 
 ---
 
-## 4. Milestone 2 Technical Validation Report (Failure-Tolerant Execution)
+## 4. Milestone 2 & 2.1 Technical Validation Report (Failure-Tolerant Execution & Hardening)
 
-All 6 controlled live Ubuntu failure scenarios and the happy-path regression were executed and verified against a live Ubuntu 24.04 VM, PostgreSQL 16 database, Ollama `qwen2.5:3b`, and server agent daemon:
+All controlled live failure scenarios and the happy-path regression were executed and verified against a live **Ubuntu 24.04 LTS under WSL2** environment, PostgreSQL 16 database, Ollama `qwen2.5:3b`, and server agent daemon:
 
 ### 4.1. Scenario A — Port Conflict & Strict Intent Integrity
 - **Test Condition**: Pre-bound port 8080 to a dummy Python HTTP process (`pid 29665`). Submitted task: `"Run nginx on port 8080."`.
@@ -91,6 +91,7 @@ All 6 controlled live Ubuntu failure scenarios and the happy-path regression wer
 - **Plan Versioning & Approval Invalidation**: Plan version bumped from `v1` to `v2`. Prior approval was invalidated (`APPROVAL_INVALIDATED`), and task halted at `WAITING_APPROVAL`.
 
 ### 4.2. Scenario B — Invalid Configuration & Verified Rollback
+- **Scope Notice**: Transactional config rollback is currently validated for Nginx configuration workflows.
 - **Test Condition**: Submitted task instructing configuration write with broken syntax token to `/etc/nginx/sites-available/default`.
 - **Runtime Behavior**: `FileTool` created backup at `/var/lib/opspilot/backups/{task_id}/...`, applied config, and ran `nginx -t`. Syntax test failed with exit code 1 (`unexpected "}"`).
 - **Rollback Compensation**: Tool auto-reverted to original backup. Orchestrator transitioned `EXECUTING` -> `ROLLING_BACK` -> `ROLLED_BACK`. Independent verification confirmed original configuration intact and `systemctl is-active nginx` healthy (`active`).
@@ -112,7 +113,14 @@ All 6 controlled live Ubuntu failure scenarios and the happy-path regression wer
 - **Test Condition**: Killed the agent daemon (`pkill -9 -f opspilot-agent`) while executing a 10-second command.
 - **Runtime Behavior**: Control plane severed gRPC stream immediately; classified failure as `AGENT_DISCONNECTED`; transitioned task to `WAITING_FOR_AGENT` entering a 15-second grace period. Audit event `AGENT_DISCONNECTED` recorded. Upon agent restart, stream re-established, audit event `AGENT_RECONNECTED` logged, task transitioned to `OBSERVING` and resumed execution safely without duplicate side effects.
 
-### 4.7. Regression E2E Verification
+### 4.7. Milestone 2.1 Hardening Validations
+- **Persistent Execution Ledger**: Tested with `bbolt` KV store at `/var/lib/opspilot/execution_ledger.db`. Re-execution after process restart returned cached result from disk with `persistent_ledger: true`.
+- **Uncertain Outcome Observation**: Agent process killed mid-mutation; on restart converted to `UNKNOWN`/`UNCERTAIN_EXECUTION`. Control Plane probed host state (`dpkg -s`, `systemctl is-active`, file SHA256) and safely recovered via `IDEMPOTENT_RECOVERED` without blind retries.
+- **AI Failure Boundary Isolation**: Verified that `MalformedPlanProvider` (invalid JSON), `UnsupportedToolProvider` (hallucinated tools), and `ForbiddenActionProvider` (`rm -rf /`) are blocked before dispatch with ZERO agent tool calls.
+- **Configurable Execution Bounds**: Enforced `MAX_TOOL_CALLS = 20` and `MAX_TOTAL_TASK_DURATION = 10m`. Reached limits cleanly terminate with `TASK_FAILED` or `TIMEOUT`.
+- **Git & Secret Hygiene**: Confirmed zero tracked private keys, certificates, or `.env` files in git repository history.
+
+### 4.8. Regression E2E Verification
 - **Test Condition**: Executed the clean vertical slice: `"Install nginx on this server and expose it on port 8080."`.
 - **Result**: `PASS` (Status: `COMPLETED`).
 - **Deterministic Proof**:
