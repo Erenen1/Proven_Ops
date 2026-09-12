@@ -22,34 +22,49 @@ Active Services: {req.host_context.active_services or []}
 {json.dumps(req.supported_tools, indent=2)}
 
 ### INSTRUCTION:
-Generate a minimal, safe, step-by-step execution plan to accomplish the user intent on this host.
-Include deterministic verification strategies for any state-changing operations.
-Respond ONLY with a JSON object conforming to the following structure:
+Generate a complete, minimal, safe, and verifiable step-by-step execution plan to accomplish the user intent on this host.
+
+### EXAMPLE PLAN FOR NGINX ON PORT 8080:
 {{
-  "goal": "Brief description of the objective",
-  "reasoning": "Technical rationale for the selected steps",
+  "goal": "Install nginx and expose it on port 8080",
+  "reasoning": "Install nginx package, configure default site to listen on port 8080, restart nginx systemd service, and verify service status, port 8080, and HTTP 200 response.",
   "steps": [
     {{
       "id": "step-1",
-      "action": "action_name",
-      "arguments": {{ "arg_name": "value" }},
-      "reason": "Why this action is performed",
-      "suggested_risk": "READ_ONLY | LOW | MEDIUM | HIGH",
-      "verification_strategy": {{
-        "check_type": "systemd_active | tcp_port_open | http_probe | package_installed",
-        "target": "service_name | port_number | url",
-        "expected": "expected value or condition"
-      }}
+      "action": "install_package",
+      "arguments": {{"name": "nginx"}},
+      "reason": "Install nginx web server",
+      "suggested_risk": "MEDIUM",
+      "verification_strategy": {{"check_type": "package_installed", "target": "nginx", "expected": "installed"}}
+    }},
+    {{
+      "id": "step-2",
+      "action": "write_config_file",
+      "arguments": {{
+        "path": "/etc/nginx/sites-available/default",
+        "content": "server {{\n    listen 8080 default_server;\n    listen [::]:8080 default_server;\n    root /var/www/html;\n    index index.html index.nginx-debian.html;\n    server_name _;\n    location / {{\n        try_files $uri $uri/ =404;\n    }}\n}}\n"
+      }},
+      "reason": "Configure nginx to listen on port 8080",
+      "suggested_risk": "MEDIUM",
+      "verification_strategy": {{"check_type": "systemd_active", "target": "nginx", "expected": "active"}}
+    }},
+    {{
+      "id": "step-3",
+      "action": "restart_service",
+      "arguments": {{"name": "nginx"}},
+      "reason": "Apply configuration changes and start nginx",
+      "suggested_risk": "MEDIUM",
+      "verification_strategy": {{"check_type": "systemd_active", "target": "nginx", "expected": "active"}}
     }}
   ],
   "overall_verification": [
-    {{
-      "check_type": "http_probe | tcp_port_open | systemd_active",
-      "target": "target identifier",
-      "expected": "expected condition"
-    }}
+    {{"check_type": "systemd_active", "target": "nginx", "expected": "active"}},
+    {{"check_type": "tcp_port_open", "target": "8080", "expected": "open"}},
+    {{"check_type": "http_probe", "target": "http://127.0.0.1:8080", "expected": "200"}}
   ]
 }}
+
+Respond ONLY with a JSON object conforming to the schema above:
 """
 
 def build_replanning_prompt(req: ReplanRequest) -> str:

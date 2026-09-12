@@ -28,7 +28,13 @@ func (t *FileTool) Description() string {
 func (t *FileTool) Execute(ctx context.Context, args map[string]any) (*ExecutionResult, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
-		return &ExecutionResult{ExitCode: 1, Stderr: "missing 'path' argument", Success: false}, nil
+		path, _ = args["file_path"].(string)
+	}
+	if path == "" {
+		path, _ = args["target"].(string)
+	}
+	if path == "" {
+		return &ExecutionResult{ExitCode: 1, Stderr: "missing 'path' or 'file_path' argument", Success: false}, nil
 	}
 
 	cleanPath := filepath.Clean(path)
@@ -64,6 +70,12 @@ func (t *FileTool) Execute(ctx context.Context, args map[string]any) (*Execution
 
 	case "write_config_file":
 		content, _ := args["content"].(string)
+		if content == "" {
+			content, _ = args["file_content"].(string)
+		}
+		if content == "" {
+			content, _ = args["data"].(string)
+		}
 		backupPath := ""
 
 		// If file exists, create automatic backup

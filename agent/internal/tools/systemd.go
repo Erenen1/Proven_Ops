@@ -30,9 +30,12 @@ func (t *SystemdTool) Execute(ctx context.Context, args map[string]any) (*Execut
 		serviceName, _ = args["service"].(string)
 	}
 	if serviceName == "" {
+		serviceName, _ = args["service_name"].(string)
+	}
+	if serviceName == "" {
 		return &ExecutionResult{
 			ExitCode: 1,
-			Stderr:   "missing required 'name' or 'service' argument",
+			Stderr:   "missing required 'name', 'service', or 'service_name' argument",
 			Success:  false,
 		}, nil
 	}

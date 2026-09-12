@@ -13,6 +13,11 @@ type Config struct {
 	AgentID              string
 	Hostname             string
 	WorkingDir           string
+	TLSEnabled           bool
+	TLSCACert            string
+	TLSClientCert        string
+	TLSClientKey         string
+	TLSServerName        string
 }
 
 func Load() *Config {
@@ -46,6 +51,12 @@ func Load() *Config {
 		workingDir = "/tmp/opspilot"
 	}
 
+	tlsEnabled := os.Getenv("TLS_ENABLED") == "true" || os.Getenv("TLS_ENABLED") == "1"
+	serverName := os.Getenv("TLS_SERVER_NAME")
+	if serverName == "" {
+		serverName = "localhost"
+	}
+
 	return &Config{
 		ControlPlaneAddr:     addr,
 		BootstrapToken:       token,
@@ -53,5 +64,10 @@ func Load() *Config {
 		Environment:          env,
 		Hostname:             hostname,
 		WorkingDir:           workingDir,
+		TLSEnabled:           tlsEnabled,
+		TLSCACert:            os.Getenv("TLS_CA_CERT"),
+		TLSClientCert:        os.Getenv("TLS_CLIENT_CERT"),
+		TLSClientKey:         os.Getenv("TLS_CLIENT_KEY"),
+		TLSServerName:        serverName,
 	}
 }

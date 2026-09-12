@@ -3,26 +3,30 @@
 Last Updated: 2026-09-12
 
 ## Current Focus
-Establishing durable, low-token AI project memory and Antigravity workspace customization system (`GEMINI.md`, `.agents/rules/`, `docs/context/`, `.agents/skills/project-handoff/`).
+Validating and hardening OpsPilot against a real Ubuntu host environment. Full vertical slice validation completed and verified end-to-end.
 
 ## Completed
-- **Core Platform Monorepo**: Complete layout with `apps/control-plane`, `apps/ai-service`, `apps/dashboard`, `agent`, `proto`, `db`, `benchmarks`, `scripts`.
-- **Go Control Plane (`apps/control-plane/`)**: REST API, SSE streaming hub, gRPC server, Task State Machine, static Policy Engine, JWT/RBAC, dual-mode database store.
-- **Go Server Agent (`agent/`)**: Single-binary daemon, capability discovery, 20+ typed tools (`systemd`, `apt`, `net`, `file`, `docker`), multi-layer Command Guard, systemd installer script (`scripts/install-agent.sh`).
-- **Python AI Service (`apps/ai-service/`)**: FastAPI, Pydantic v2 schemas, prompt injection defense with `<UNTRUSTED_OBSERVATION>` boundaries, Ollama/Qwen model provider with deterministic fallback.
-- **React Dashboard (`apps/dashboard/`)**: Dark-theme technical operations interface, live SSE Task Timeline, interactive Approval Gate, Fleet view, Reusable Runbooks, Audit Trail explorer.
-- **Protobuf Schemas (`proto/agent.proto`)**: Compiled to Go in `proto/v1/`.
-- **Benchmark Lab (`benchmarks/`)**: 5 controlled Linux failure scenarios with evaluation runner (`benchmarks/runner.py`).
-- **Open Source Workflow**: Hardened `.gitignore`, `CONTRIBUTING.md` with GitHub Flow & Conventional Commits standard, `.github/PULL_REQUEST_TEMPLATE.md`, `LICENSE` (MIT).
-- **Git Repository & Remote**: Initialized on `main`, committed cleanly, and linked to `https://github.com/Erenen1/Infra_Agent.git`.
+- **Live Ubuntu Vertical Slice Verified**: End-to-end flow passed on Ubuntu 24.04 with live Ollama `qwen2.5:3b`, PostgreSQL 16, and real Server Agent daemon:
+  - Task creation (`POST /api/v1/tasks`)
+  - Agent host discovery (`DISCOVERING`)
+  - AI Plan generation via Ollama (`PLANNING`)
+  - Policy & Risk evaluation -> `WAITING_APPROVAL`
+  - Operator approval (`POST /api/v1/tasks/{id}/approve`)
+  - Real execution (`EXECUTING`): `apt-get install -y nginx`, configure `/etc/nginx/sites-available/default` for port 8080, `systemctl restart nginx`
+  - Deterministic verification (`VERIFYING`): `package_installed` (dpkg), `systemd_active` (systemd), `tcp_port_open` (socket probe on 8080), `http_probe` (HTTP 200)
+  - `COMPLETED` state and PostgreSQL `audit_events` persistence.
+- **Production PostgreSQL Store**: Implemented `PostgresStore` (`apps/control-plane/internal/database/postgres.go`) using `pgxpool.Pool` with fail-fast in production mode.
+- **True Mutual TLS (mTLS)**: Implemented ECDSA P-256 PKI, client/server certificate generation, strict `RequireAndVerifyClientCert` enforcement, and rejection test (`apps/control-plane/internal/pki/mtls_test.go`).
+- **Deterministic Verification Engine**: Implemented `executeVerification` in orchestrator with actual agent tools and network probes.
+- **Agent Real Metrics**: Fixed dummy metrics in `collector.go` to parse `/proc/loadavg` and `/proc/meminfo`.
+- **Documentation & Reality Hardening**: `VALIDATION_REPORT.md` and `E2E_TEST.md` created; downgraded prompt injection claims to defense-in-depth boundary; clarified offline nature of benchmark suite.
 
 ## In Progress
-- Antigravity AI Project Memory system activation and migration of legacy docs.
+- Completing session handoff and reporting findings.
 
 ## Next
-1. Run automated test suite to confirm complete system integrity.
-2. Commit and push the project memory infrastructure to GitHub.
-3. Validate live end-to-end task execution in Docker Compose with target Ubuntu node.
+1. Add automated VM integration tests to GitHub Actions pipeline.
+2. Build UI test harness for Dashboard verification against live backend.
 
 ## Blocked
 - None. All components build and pass unit tests.

@@ -57,7 +57,7 @@ It is explicitly **not** a simple “LLM → SSH → Shell command” script. Th
 > **"LLM output is never trusted as executable authority."**
 
 1. **Untrusted Planner**: The model never holds shell execution credentials. It only recommends structured typed actions.
-2. **Untrusted Data Isolation**: All server logs, stdout, and file contents are tagged as `<UNTRUSTED_OBSERVATION>`. The model is instructed that text inside observation tags is inert data, neutralizing indirect prompt injection.
+2. **Untrusted Data Isolation**: All server logs, stdout, and file contents are tagged as `<UNTRUSTED_OBSERVATION>` as a defense-in-depth boundary against indirect prompt injection (paired with structured JSON schema validation and control plane policy enforcement).
 3. **Hardened Policy Boundary**: Actions have static risk levels (`READ_ONLY`, `LOW`, `MEDIUM`, `HIGH`, `FORBIDDEN`). The LLM's own self-reported risk is ignored.
 4. **Deterministic Verification**: Tasks are never marked as `COMPLETED` based on an LLM statement or exit code 0 alone; independent TCP socket, systemd status, and HTTP probes must verify state change.
 5. **Defense-in-Depth Command Guard**: Raw command fallback (`execute_command`) is subjected to tokenization and AST inspection to block destructive calls (`rm -rf /`, `mkfs`, `fdisk`, `dd`, `shutdown`, fork bombs).
@@ -147,19 +147,19 @@ curl -sSL http://<CONTROL_PLANE_IP>:8080/scripts/install-agent.sh | sudo bash -s
 
 ---
 
-## Benchmark Lab
-
-OpsPilot includes a controlled failure benchmark suite in `benchmarks/` to measure:
-- **Task Success Rate**
-- **Diagnosis Accuracy**
-- **Unsafe Action Rate** (0.0% guarantee)
-- **Average Tool Calls**
-- **Average Completion Time**
-
-Run the benchmark suite:
-```bash
-python benchmarks/runner.py
-```
+## Benchmark Evaluation
+ 
+ OpsPilot includes an offline JSON scenario evaluation harness in `benchmarks/` to measure:
+ - **Diagnosis Accuracy**: Correctly identifying fault root causes from logs
+ - **Plan Generation Quality**: Structuring typed remediation steps
+ - **Static Command Safety**: Rejection of forbidden command patterns
+ 
+ > **Note:** This harness evaluates AI diagnostic accuracy and token safety offline against mock log scenarios; it is a simulation harness and does not replace live-host fault injection testing.
+ 
+ Run the benchmark simulation:
+ ```bash
+ python benchmarks/runner.py
+ ```
 
 ---
 

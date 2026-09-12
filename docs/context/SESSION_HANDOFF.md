@@ -1,63 +1,49 @@
 # Session Handoff
 
-Last Updated: 2026-09-12 19:53
+Last Updated: 2026-09-12 20:25
 
 ## Status
-COMPLETE
+COMPLETE (VERTICAL SLICE VALIDATED ON REAL UBUNTU VM)
 
 ## Session Goal
-Establish a permanent, low-token AI project-memory and context system for OpsPilot within Antigravity IDE, migrate existing knowledge, and activate workspace rules and skills.
+Halt new feature work and conduct a rigorous, no-assumptions runtime verification of the vertical slice:
+`User: "Install nginx on this server and expose it on port 8080."` against a real Ubuntu 24.04 system.
 
 ## What Was Done
-1. Analyzed repository for existing context and AI instruction files.
-2. Built root `GEMINI.md` as a compact, progressive-disclosure AI entry point with clear source-of-truth ordering.
-3. Created Antigravity workspace rules in `.agents/rules/`:
-   - `00-core.md` (Always-on core engineering habits)
-   - `10-context-memory.md` (Always-on memory lifecycle and sync protocol)
-   - `20-backend.md` (Go Control Plane, Agent, and Python AI Service conventions)
-   - `30-frontend.md` (React Dashboard conventions)
-   - `40-database.md` (PostgreSQL and schema conventions)
-4. Built `.agents/skills/project-handoff/SKILL.md` for workspace handoff workflows.
-5. Populated `docs/context/` memory suite:
-   - `ARCHITECTURE.md` (Technical architecture, components, ports, protocols)
-   - `PRODUCT.md` (Product mission, RBAC, core workflows, business rules)
-   - `DECISIONS.md` (Standard ADR-001 through ADR-008)
-   - `CURRENT_STATE.md` (Living high-level development state snapshot)
-   - `SESSION_HANDOFF.md` (Active session handoff note)
-   - `KNOWN_ISSUES.md` (Project technical debt and known operational considerations)
-
-## Changes Made
-- Created directory structures `.agents/rules/`, `.agents/skills/project-handoff/`, and `docs/context/`.
-- Migrated content from legacy `PROJECT_CONTEXT.md` and `docs/*.md` into unified `docs/context/`.
+1. Comprehensive codebase audit and creation of `docs/VALIDATION_REPORT.md` and `docs/E2E_TEST.md`.
+2. Replaced stubbed mTLS with full ECDSA P-256 PKI, generating Root CA, server certs, and client certs. Verified rejection of untrusted/plaintext certificates (`apps/control-plane/internal/pki/mtls_test.go`).
+3. Implemented true PostgreSQL persistence (`PostgresStore`) with fail-fast in `ENVIRONMENT=production`.
+4. Replaced stubbed verification with real deterministic verification engine dispatching agent checks (`dpkg`, `systemctl`) and network probes (`tcp_port_open`, `http_probe`).
+5. Connected live Ollama container (`qwen2.5:3b`) and structured planning with few-shot guidance.
+6. Deployed updated Go agent binary to real Ubuntu 24.04 host with systemd.
+7. Ran end-to-end task from `CREATED` -> `DISCOVERING` -> `PLANNING` -> `WAITING_APPROVAL` -> `EXECUTING` -> `VERIFYING` -> `COMPLETED`.
+8. Proved live Ubuntu execution: `systemctl is-active nginx` -> active, `ss -tlpn` -> port 8080 listening, `curl http://localhost:8080` -> HTTP 200 with Nginx welcome page, PostgreSQL `audit_events` and `verification_results` persisted.
+9. Downgraded prompt injection claims to defense-in-depth boundary and clarified offline nature of benchmark suite.
 
 ## Files Touched
-- `GEMINI.md`
-- `.agents/rules/00-core.md`
-- `.agents/rules/10-context-memory.md`
-- `.agents/rules/20-backend.md`
-- `.agents/rules/30-frontend.md`
-- `.agents/rules/40-database.md`
-- `.agents/skills/project-handoff/SKILL.md`
-- `docs/context/ARCHITECTURE.md`
-- `docs/context/PRODUCT.md`
-- `docs/context/DECISIONS.md`
+- `apps/control-plane/internal/database/postgres.go` (NEW)
+- `apps/control-plane/internal/database/db.go`
+- `apps/control-plane/internal/pki/pki.go` (NEW)
+- `apps/control-plane/internal/pki/mtls_test.go` (NEW)
+- `apps/control-plane/cmd/pki-gen/main.go` (NEW)
+- `apps/control-plane/cmd/server/main.go`
+- `apps/control-plane/internal/orchestrator/orchestrator.go`
+- `agent/internal/discovery/collector.go`
+- `agent/internal/tools/package_tool.go`
+- `agent/internal/tools/file_tool.go`
+- `agent/internal/tools/service_tool.go`
+- `agent/internal/tools/network_tool.go`
+- `agent/cmd/agent/main.go`
+- `apps/ai-service/app/prompts/planner.py`
+- `docs/VALIDATION_REPORT.md` (NEW)
+- `docs/E2E_TEST.md` (NEW)
 - `docs/context/CURRENT_STATE.md`
 - `docs/context/SESSION_HANDOFF.md`
-- `docs/context/KNOWN_ISSUES.md`
+- `GEMINI.md`
+- `README.md`
 
 ## Current State
-The project memory system is fully active, self-contained, and integrated into Antigravity IDE standards. All automated tests pass 100%.
-
-## Remaining Work
-- Commit newly established project memory and rules to `main`.
-- Optional: Push to remote `origin/main`.
-
-## Exact Next Step
-Run `git status` to verify staged context files, commit using `chore(ai): establish Antigravity project memory and workspace rules`, and push to remote.
-
-## Important Decisions
-- ADR-007: Dual-mode store (PostgreSQL + in-memory resilient fallback).
-- ADR-008: Untrusted observation tagging for prompt injection defense.
+All 17 critical capabilities and the target vertical slice are fully implemented, verified with live terminal and database proofs against a real Ubuntu host environment.
 - Progressive disclosure: New sessions load only `GEMINI.md` → `CURRENT_STATE.md` → `SESSION_HANDOFF.md` initially to conserve token consumption.
 
 ## Risks / Warnings
