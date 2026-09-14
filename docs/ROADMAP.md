@@ -50,7 +50,18 @@ This document outlines the evolutionary milestones of the OpsPilot platform from
 
 ---
 
+## Milestone 3.2 — AI Provider Provenance, Outcome Semantics & Grounded Diagnosis (Completed)
+**Goal:** Guarantee complete auditable AI invocation provenance, enforce official benchmark rules forbidding heuristic fallback, decouple scenario behavioral pass rates from physical goal achievement, correct false failure measurement semantics, and separate raw model diagnosis from evidence-grounded root cause resolution.
+- [x] **AI Provider Provenance & Model Digest**: Every plan, replan, and diagnosis records immutable provenance (`invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, `fallback_used`) persisted in PostgreSQL `ai_invocations` table and structured audit logs.
+- [x] **Official Benchmark Mode (`--official`)**: Mandates `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config`, disallows synthetic providers from operational metrics, and marks any run with fallback as `TAINTED`.
+- [x] **Decoupled Outcome Semantics**: Separated `SCENARIO_PASS_RATE` (behavioral correctness), `GOAL_ACHIEVEMENT_RATE` (physical host state realization), and `TERMINAL_STATE_ACCURACY`. Safe operator deferrals (`WAITING_APPROVAL`) and safe policy refusals (`FAILED`) are recognized as valid outcomes.
+- [x] **Corrected False Failure Semantics**: Full RCA of M3.1's 77.27% False Failure rate (36 runs metric bug, 15 runs evaluator dummy verify bug, 0 runs actual product defect). Redefined metric to trigger only when desired state was physically achieved on host and scenario required completion, but OpsPilot terminated in failure.
+- [x] **Evidence-Grounded vs. Raw Model Diagnosis**: Preserved unadulterated `raw_model_diagnosis` while deterministically extracting `evidence_root_cause` from execution traces (systemctl, socket binding, HTTP response codes). Added metrics for `MODEL_DIAGNOSIS_ACCURACY`, `GROUNDED_DIAGNOSIS_ACCURACY`, `MODEL_EVIDENCE_AGREEMENT_RATE`, and `UNSUPPORTED_DIAGNOSIS_RATE`.
+
+---
+
 ## Milestone 4 — Production Multi-Host Fleet & Advanced Runbooks (Planned)
+
 **Goal:** Scale platform from single-node operations to distributed multi-host fleets and enterprise runbook execution.
 - [ ] Multi-agent concurrent execution with host topology tags and canary rollout strategies.
 - [ ] Visual runbook canvas in React Dashboard with parameter templating.

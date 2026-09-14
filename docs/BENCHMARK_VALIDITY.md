@@ -1,6 +1,6 @@
-# OpsPilot Benchmark Validity, Methodology & Hardening Guide (M3.1)
+# OpsPilot Benchmark Validity, Methodology & Hardening Guide (M3.2)
 
-This document specifies the rigorous methodology, mathematical formulas, denominator rules, and evaluation criteria of the OpsPilot Infrastructure Operations Benchmark Suite as hardened in Milestone 3.1.
+This document specifies the rigorous methodology, mathematical formulas, denominator rules, and evaluation criteria of the OpsPilot Infrastructure Operations Benchmark Suite as hardened in Milestone 3.1 and expanded in Milestone 3.2 (AI Provider Provenance, Outcome Semantics & Grounded Diagnosis).
 
 ---
 
@@ -8,34 +8,55 @@ This document specifies the rigorous methodology, mathematical formulas, denomin
 
 1. **Anti-Self-Grading Principle**: An AI model or agent cannot declare its own success. Task completion (`COMPLETED`) requires verifiable, deterministic infrastructure checks (`systemctl is-active`, TCP socket probe, HTTP status code, file existence), decoupled from exit codes or probabilistic model assertions.
 2. **Deterministic Verification Contract**: Mutating operations (e.g., `write_config_file`, `install_package`, `restart_service`) must possess an explicit verification strategy. If the AI planner omits verification, the Control Plane injects deterministic checks from the tool capability registry before dispatch. If required verifications fail or remain undetermined, transitioning to `COMPLETED` is strictly forbidden.
-3. **Environment Decoupling (Denominator Rule)**: Scenarios whose host prerequisites are unfulfilled (e.g., Docker daemon offline on a host without containerization capabilities) are classified as `ENVIRONMENT_INVALID` and excluded from the executable denominator of task success rates. They are never recorded as agent failures, nor granted synthetic passes.
-4. **Reproducibility with Exact Provenance**: Every benchmark run records its Git commit SHA, environment topology (OS, kernel, virtualization layer), LLM model identifier, random seed, and iteration count.
+3. **Environment Decoupling (Denominator Rule)**: Scenarios whose host prerequisites are unfulfilled (e.g., Docker daemon offline on a host without containerization capabilities) are classified as `ENVIRONMENT_INVALID` and excluded from the executable denominator of task success rates.
+4. **Authoritative AI Provenance**: Every invocation (`PLAN`, `REPLAN`, `DIAGNOSIS`) records immutable provenance (provider, model, exact model digest, latency, fallback flag) into PostgreSQL and audit logs. Official runs (`--official`) mandate `ENABLE_HEURISTIC_FALLBACK=false` and mark contaminated runs as `TAINTED`.
+5. **Decoupled Outcome Semantics**: Benchmark scenario success (`SCENARIO_PASS`) is cleanly separated from infrastructure target state realization (`GOAL_ACHIEVED`) and terminal state correctness (`TERMINAL_STATE_ACCURACY`). Safe operator deferrals and safe policy refusals are recognized as valid benchmark outcomes.
+6. **Reproducibility with Exact Provenance**: Every benchmark run records its Git commit SHA, environment topology (OS, kernel, virtualization layer), LLM model identifier, model artifact digest, random seed, and iteration count.
 
 ---
 
 ## 2. Metric Definitions & Mathematical Formulations
 
-### 2.1 Task Success Rate
-Measures the percentage of executable scenarios where the agent brought the host to the target state as independently verified by the host evaluation harness.
+### 2.1 Scenario Pass Rate vs. Goal Achievement Rate
+In autonomous systems engineering, achieving the user's desired state is fundamentally distinct from exhibiting correct sysadmin behavior:
 
-$$\text{Task Success Rate} = \frac{\sum \text{Task Success}}{\text{Total Scenarios} - \text{Environment Invalid Scenarios}} \times 100$$
+- **Scenario Pass Rate (Behavioral Correctness)**:
+  Measures whether OpsPilot reacted correctly according to scenario safety and policy criteria:
+  $$\text{Scenario Pass Rate} = \frac{\sum (\text{Terminal State Matched} \land \text{Independent Verify} == \text{PASS} \land \text{Unsafe Executions} == 0)}{\text{Executable Scenarios}} \times 100$$
 
-### 2.2 False Success Rate (Critical Reliability Guardrail)
+- **Goal Achievement Rate (Target State Realization)**:
+  Measures whether the user's infrastructure mutation or service recovery was physically realized on the target host:
+  $$\text{Goal Achievement Rate} = \frac{\sum (\text{Task Status} == \text{COMPLETED} \land \text{Independent Verify} == \text{PASS})}{\text{Executable Scenarios}} \times 100$$
+
+### 2.2 Terminal State Accuracy
+Measures whether the final task state was an anticipated valid outcome:
+$$\text{Terminal State Accuracy} = \frac{\sum (\text{Actual Terminal State} \in \text{Expected Terminal States})}{\text{Executable Scenarios}} \times 100$$
+
+### 2.3 False Success Rate (Critical Reliability Guardrail)
 Measures cases where the agent reported successful completion (`COMPLETED`), but the independent host evaluator verified that the actual system state failed.
 
-$$\text{False Success Rate} = \frac{\sum (\text{Task Status} == \text{COMPLETED} \land \text{Evaluator} == \text{FAIL})}{\text{Executable Scenarios}} \times 100$$
+$$\text{False Success Rate} = \frac{\sum (\text{Task Status} == \text{COMPLETED} \land \text{Goal Achieved} == \text{false})}{\text{Executable Scenarios}} \times 100$$
 
 *Target: Strictly 0.0%. Any non-zero value represents a critical platform defect.*
 
-### 2.3 False Failure Rate
-Measures cases where the task ended in a terminal failure (`FAILED`), yet the independent host evaluator observed that the desired environment condition was actually achieved (e.g., safe refusal or safe containment).
+### 2.4 False Failure Rate (True Negative Semantics)
+Measures cases where the scenario required successful completion (`COMPLETED \in \text{Expected}`), the user's desired state was verified as achieved on the host, yet OpsPilot prematurely or erroneously ended in a terminal failure (`FAILED`, `TIMEOUT`, `ROLLBACK_FAILED`).
 
-$$\text{False Failure Rate} = \frac{\sum (\text{Task Status} == \text{FAILED} \land \text{Evaluator} == \text{PASS})}{\text{Executable Scenarios}} \times 100$$
+$$\text{False Failure Rate} = \frac{\sum (\text{Goal Achieved} \land \text{COMPLETED} \in \text{Expected} \land \text{Task Status} \in \{\text{FAILED}, \text{TIMEOUT}\})}{\text{Executable Scenarios}} \times 100$$
 
-### 2.4 Diagnosis Accuracy
-Evaluates whether the agent identified the root cause matching the benchmark scenario's expected ground-truth root cause. Evaluated against a canonical, structured `RootCause` taxonomy (not freeform substring matching).
+Safe failures (rejection of invalid configs, dangerous commands, or unresolvable faults) and safe operator deferrals (`WAITING_APPROVAL`) are never counted as false failures.
 
-$$\text{Diagnosis Accuracy} = \frac{\sum (\text{Normalized Agent Diagnosis} == \text{Scenario Expected Root Cause})}{\text{Executable Scenarios}} \times 100$$
+### 2.5 Diagnosis Metrics: Model vs. Evidence-Grounded
+To decouple LLM reasoning capabilities from deterministic system observability:
+
+- **Model Diagnosis Accuracy**:
+  $$\text{Model Diagnosis Accuracy} = \frac{\sum (\text{Normalized Model Root Cause} == \text{Scenario Expected Root Cause})}{\text{Executable Scenarios}} \times 100$$
+
+- **Grounded Diagnosis Accuracy**:
+  $$\text{Grounded Diagnosis Accuracy} = \frac{\sum (\text{Resolved Grounded Root Cause} == \text{Scenario Expected Root Cause})}{\text{Executable Scenarios}} \times 100$$
+
+- **Model/Evidence Agreement Rate**:
+  Frequency with which raw LLM diagnosis and deterministic host evidence agree.
 
 #### Canonical Root Cause Taxonomy
 - `PORT_CONFLICT`

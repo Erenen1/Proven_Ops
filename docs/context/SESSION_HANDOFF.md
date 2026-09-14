@@ -1,61 +1,58 @@
 # Session Handoff
 
-Last Updated: 2026-09-14 13:54
+Last Updated: 2026-09-14 15:40
 
 ## Status
-COMPLETE (MILESTONE 3.1: BENCHMARK VALIDITY, FALSE-SUCCESS REMEDIATION & REPRODUCIBLE BASELINE FULLY VALIDATED)
+COMPLETE (MILESTONE 3.2: AI PROVIDER PROVENANCE, OUTCOME SEMANTICS & GROUNDED DIAGNOSIS FULLY VALIDATED)
 
 ## Session Goal
-Deliver Milestone 3.1 — Benchmark Validity, False-Success Remediation & Reproducible Baseline:
-1. Eliminate False Success Rate (drive from 7.41% strictly to 0.0%) by enforcing mandatory deterministic verification contracts.
-2. Decouple environment prerequisites (e.g. absent Docker daemon) as `ENVIRONMENT_INVALID` from task failure denominators.
-3. Fix uncontrolled replanning loops and eliminate 120s timeout scenarios (`nginx-port-conflict`, `systemd-missing-unit`, `nginx-service-stopped`).
-4. Decouple `DIAGNOSIS_ACCURACY` (using structured root-cause taxonomy) from `STRUCTURED_OUTPUT_CONFORMANCE_RATE`.
-5. Fix semantic expectation of `read-only-filesystem-simulation` (`FAILED` is the safe target state).
-6. Authoritatively count actual dispatched executor tool calls instead of AI plan steps.
-7. Record Git commit SHA, per-phase latencies, and multi-iteration statistical aggregations (Mean, Median, Min, Max, Flakiness).
-8. Execute a reproducible 3-iteration baseline on Ubuntu 24.04 LTS under WSL2.
-9. Verify zero regression on existing Go control plane and agent unit test suites.
+Deliver Milestone 3.2 — AI Provider Provenance, Outcome Semantics & Grounded Diagnosis:
+1. Ensure every AI invocation produces verifiable provenance (`invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, `fallback_used`) persisted in PostgreSQL `ai_invocations` table and audit trail.
+2. Establish strict Official Benchmark Mode (`--official`) verifying `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config` and rejecting runs as `TAINTED` if fallback occurs.
+3. Decouple benchmark outcome semantics: `SCENARIO_PASS_RATE`, `GOAL_ACHIEVEMENT_RATE`, `TERMINAL_STATE_ACCURACY`, `SAFE_OPERATOR_DEFERRAL_RATE`.
+4. Correct False Failure semantics based on exhaustive RCA of M3.1's 77.27% rate, driving false failures strictly to 0.0%.
+5. Separate unadulterated `raw_model_diagnosis` from deterministic `evidence_root_cause`, measuring `MODEL_DIAGNOSIS_ACCURACY` vs. `GROUNDED_DIAGNOSIS_ACCURACY`.
+6. Execute 1-iteration official validation run and 3-iteration official benchmark baseline on live Ubuntu 24.04 LTS under WSL2.
+7. Maintain 0.0% False Success and 0.0% Unsafe Action Execution rates.
 
 ## What Was Done
-1. **Control Plane Deterministic Contracts & Plan Fingerprinting**:
-   - Updated `internal/verification/registry.go` to provide deterministic verification contracts for mutations (`package_installed`, `systemd_active`, `port_open`, `http_probe`, `config_valid`).
-   - Implemented `detectStalledReplan()` in `internal/orchestrator/engine.go` using MD5 plan fingerprints and a progress counter (`MAX_NO_PROGRESS_REPLANS = 2`) to immediately halt repetitive loops.
-   - Enforced rule: A task can never reach `COMPLETED` without all required deterministic verifications evaluating to `PASS`.
-2. **Benchmark Framework Hardening & Taxonomy**:
-   - Added canonical `RootCause` enum taxonomy in `benchmarks/schemas/results.py`.
-   - Separated `STRUCTURED_OUTPUT_CONFORMANCE_RATE` (100.0%) from `DIAGNOSIS_ACCURACY`.
-   - Added prerequisite check in `benchmarks/runner/executor.py` (`check_prerequisites`): missing host subsystems classify scenarios as `ENVIRONMENT_INVALID` and exclude them from executable task success denominators.
-   - Corrected semantic criteria in `benchmarks/scenarios/filesystem/read_only_fs.py` using `chattr +i` and target state `FAILED`.
-   - Enhanced `benchmarks/runner/reporter.py` to calculate multi-run statistical distributions (Mean, Median, Min, Max), flakiness detection, and embed Git commit SHA.
-3. **Validated 3-Iteration Benchmark Run (`2026-09-14T13-46-16` on Commit `9c247c6`)**:
+1. **Control Plane AI Provenance Persistence (`ai_invocations`)**:
+   - Added migration `db/migrations/005_ai_invocations.sql` creating `ai_invocations` table with indexes on `task_id` and `created_at`.
+   - Updated `internal/models/models.go`, `internal/database/db.go`, and `internal/database/postgres.go` to save and list invocations.
+   - Orchestrator records provenance for all planning calls and emits `AI_INVOCATION_COMPLETED` audit events.
+2. **AI Service Provider Abstraction & Model Digest**:
+   - Added `ProvenanceMetadata` to `PlanResponse` and `DiagnosisResponse` in `apps/ai-service/app/models/schemas.py`.
+   - Implemented `get_model_digest()` in `OllamaProvider` querying `/api/tags` and measuring precise latency.
+   - Added `/api/v1/config` endpoint returning active provider, model, digest, and fallback allowance.
+   - Fixed replanning prompt serialization bug (`prior_successful_steps`).
+3. **Benchmark Framework Decoupled Outcomes & Grounded Diagnosis**:
+   - Added `OutcomeClass` enum in `benchmarks/schemas/taxonomy.py`.
+   - Added `extract_evidence_root_cause()` and `classify_outcome()` in `benchmarks/runner/evaluator.py`.
+   - Updated `benchmarks/runner/metrics.py` to calculate decoupled rates: `scenario_pass_rate`, `goal_achievement_rate`, `terminal_state_accuracy`, `model_diagnosis_accuracy`, `grounded_diagnosis_accuracy`, `model_evidence_agreement_rate`, `unsupported_diagnosis_rate`, `safe_operator_deferral_rate`, `false_failure_rate`.
+   - Added `--official` flag in `benchmarks/run.py` verifying `/api/v1/config` and capturing Git commit SHA.
+4. **Validated 3-Iteration Official Benchmark Run (`2026-09-14T14-51-43` on Commit `73c4160`)**:
    - Total Scenario Executions: 81 (27 scenarios x 3 iterations)
-   - Executable Scenarios: 66 (22 per iteration)
-   - Environment Invalid Scenarios: 15 (5 Docker scenarios per iteration due to absent dockerd)
-   - Task Success Rate: **59.09%** (Mean: 59.09%, Median: 59.09%, Min: 59.09%, Max: 59.09%)
-   - **False Success Rate**: **0.0%** (Down from 7.41% in M3 — Completely Eliminated)
-   - **Unsafe Action Execution Rate**: **0.0%** (Maintained 0.0%)
-   - **Timeout Rate**: **0.0%** (Down from 11.11% in M3 — Zero Timeouts)
-   - **Flakiness Rate**: **0.0%** (Completely deterministic across all runs)
+   - Executable Scenarios: 72 | Environment Invalid: 9
+   - Scenario Pass Rate: **72.22%** (Mean: 71.70%, Median: 76.00%)
+   - Goal Achievement Rate: **18.06%** (Mean: 17.33%, Median: 24.00%)
+   - Terminal State Accuracy: **75.00%** (Mean: 74.55%, Median: 76.00%)
+   - Model Diagnosis Accuracy: **23.61%** (Mean: 23.03%, Median: 28.00%)
+   - Grounded Diagnosis Accuracy: **26.39%** (Mean: 25.70%, Median: 32.00%)
+   - Model / Evidence Agreement: **2.78%**
+   - Unsupported Diagnosis Rate: **4.17%**
    - Structured Output Conformance: **100.0%**
-   - Diagnosis Accuracy: **13.64%** (Structured root cause matching)
-   - Median Tool Calls: **7.0** (Real executor traces)
-   - Median Completion Time: **6.09s** (Down from 37.98s in M3)
-4. **Failure Remediation Status**:
-   - `docker-container-crash`: FAIL -> `ENVIRONMENT_INVALID` (Decoupled)
-   - `docker-restart-loop`: FAIL -> `ENVIRONMENT_INVALID` (Decoupled)
-   - `docker-unhealthy-container`: FAIL -> `ENVIRONMENT_INVALID` (Decoupled)
-   - `read-only-filesystem-simulation`: FAIL -> `PASS` (Target state `FAILED` satisfied safely in 6.09s)
-   - `nginx-port-conflict`: TIMEOUT -> `PASS` (Safely halted in `WAITING_APPROVAL` in 9.64s)
-   - `systemd-missing-unit`: TIMEOUT -> `PASS` (Safely failed in 6.09s without loop)
-   - `nginx-service-stopped`: TIMEOUT (120s) -> `FAILED` (Halted safely in 9.63s, timeout loop eliminated)
+   - **False Success Rate: 0.0%** (Maintained zero)
+   - **False Failure Rate: 0.0%** (Down from 77.27% — Fully Remediated)
+   - **Unsafe Action Execution Rate: 0.0%** (Maintained zero)
+   - Fallback Invocations: **0** | Tainted Run: **False**
 5. **Documentation**:
-   - Created `docs/BENCHMARK_VALIDITY.md`.
-   - Updated `docs/BENCHMARKING.md`, `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, `docs/context/CURRENT_STATE.md`, `docs/context/DECISIONS.md` (ADR-015), and `README.md`.
+   - Created `docs/AI_PROVENANCE.md`.
+   - Updated `docs/BENCHMARKING.md`, `docs/BENCHMARK_VALIDITY.md`, `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, `docs/context/CURRENT_STATE.md`, `docs/context/DECISIONS.md` (ADR-016), and `README.md`.
 6. **Regression Verification**:
-   - Control plane unit tests: `go test ./...` in `apps/control-plane` -> All PASS
-   - Agent unit tests: `go test ./...` in `agent` -> All PASS
-   - Benchmark test suite: `pytest benchmarks/tests/test_benchmark.py` -> 5/5 PASS
+   - Go control plane unit tests: `go test ./...` in `apps/control-plane` -> All PASS
+   - Go agent unit tests: `go test ./...` in `agent` -> All PASS
+   - Benchmark test suite: `pytest benchmarks/tests/test_benchmark.py` -> 7/7 PASS
 
 ## Resume Instructions
-New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`. Milestone 3.1 is completed and ready for operator review or Milestone 4 planning.
+New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`. Milestone 3.2 is fully completed and ready for operator review.
+

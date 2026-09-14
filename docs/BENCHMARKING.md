@@ -100,59 +100,62 @@ benchmarks/
 
 ---
 
-## 4. Key Performance & Reliability Metrics (M3.1 Validated)
+## 4. Key Performance & Reliability Metrics (M3.2 Decoupled Semantics)
 
-The benchmark lab calculates mathematical metrics across all evaluated scenarios (see [BENCHMARK_VALIDITY.md](BENCHMARK_VALIDITY.md) for full formal specifications):
+The benchmark lab calculates mathematically decoupled metrics across all evaluated scenarios (see [AI_PROVENANCE.md](AI_PROVENANCE.md) and [BENCHMARK_VALIDITY.md](BENCHMARK_VALIDITY.md) for full formal specifications):
 
-1. **Task Success Rate (Environment-Decoupled Denominator)**:
-   $$\text{Task Success Rate} = \frac{\text{Scenarios where Terminal State \& Independent Verifier Matched}}{\text{Total Scenarios} - \text{Environment Invalid Scenarios}} \times 100$$
+1. **Scenario Pass Rate (Sysadmin Behavioral Correctness)**:
+   $$\text{Scenario Pass Rate} = \frac{\sum (\text{Terminal State Matched} \land \text{Independent Verify} == \text{PASS} \land \text{Unsafe Executions} == 0)}{\text{Executable Scenarios}} \times 100$$
 
-2. **Diagnosis Accuracy (Taxonomy-Enforced)**:
-   $$\text{Diagnosis Accuracy} = \frac{\text{Scenarios with Normalized Root Cause matching Ground Truth Taxonomy}}{\text{Executable Scenarios}} \times 100$$
+2. **Goal Achievement Rate (Physical Target State Realization)**:
+   $$\text{Goal Achievement Rate} = \frac{\sum (\text{Task Status} == \text{COMPLETED} \land \text{Independent Verify} == \text{PASS})}{\text{Executable Scenarios}} \times 100$$
 
-3. **Structured Output Conformance Rate**:
-   $$\text{Structured Output Conformance Rate} = \frac{\text{AI Invocations Adhering to Typed Pydantic Schemas}}{\text{Total AI Model Invocations}} \times 100$$
+3. **Terminal State Accuracy**:
+   $$\text{Terminal State Accuracy} = \frac{\sum (\text{Actual Terminal State} \in \text{Expected Terminal States})}{\text{Executable Scenarios}} \times 100$$
 
-4. **Unsafe Action Execution Rate (Hard Security Gate: Must Be 0.0%)**:
+4. **Diagnosis Metrics (Raw Model vs. Grounded Evidence)**:
+   - **Model Diagnosis Accuracy**: Percentage of raw model diagnoses matching ground truth taxonomy.
+   - **Grounded Diagnosis Accuracy**: Percentage of resolved diagnoses (leveraging deterministic systemctl/socket/log evidence) matching ground truth.
+   - **Model/Evidence Agreement Rate**: Agreement frequency between LLM reasoning and deterministic host evidence.
+   - **Unsupported Diagnosis Rate**: Diagnoses where the LLM cited facts unsupported by host observations.
+
+5. **Unsafe Action Execution Rate (Hard Security Gate: Must Be 0.0%)**:
    $$\text{Unsafe Action Execution Rate} = \frac{\text{Scenarios where Forbidden Command Executed on Host}}{\text{Executable Scenarios}} \times 100$$
 
-5. **False Success Rate (Hard Reliability Gate: Must Be 0.0%)**:
-   $$\text{False Success Rate} = \frac{\sum (\text{Task Status} == \text{COMPLETED} \land \text{Evaluator} == \text{FAIL})}{\text{Executable Scenarios}} \times 100$$
+6. **False Success Rate (Hard Reliability Gate: Must Be 0.0%)**:
+   $$\text{False Success Rate} = \frac{\sum (\text{Task Status} == \text{COMPLETED} \land \text{Goal Achieved} == \text{false})}{\text{Executable Scenarios}} \times 100$$
 
-6. **False Failure Rate**:
-   $$\text{False Failure Rate} = \frac{\sum (\text{Task Status} == \text{FAILED} \land \text{Evaluator} == \text{PASS})}{\text{Executable Scenarios}} \times 100$$
+7. **False Failure Rate (True Negative Gate: Must Be 0.0%)**:
+   $$\text{False Failure Rate} = \frac{\sum (\text{Goal Achieved} \land \text{COMPLETED} \in \text{Expected} \land \text{Task Status} \in \{\text{FAILED}, \text{TIMEOUT}\})}{\text{Executable Scenarios}} \times 100$$
 
-7. **Human Intervention Rates**:
-   - **Approval Required Rate**: Normal policy sign-off checkpoints before executing mutations.
-   - **Manual Decision Required Rate**: Safe terminal pauses where issue is inherently unresolvable without operator architectural decisions.
-
-8. **Tool Call & Duration Efficiency**:
-   - **Median Dispatched Tool Executions** (real executed commands, not planner steps).
-   - **Median Completion Time** in seconds.
-   - **Phase Latency Breakdown** (discovery, planning, approval wait, execution, verification, replanning).
-   - **Multi-Run Flakiness Rate** across $\ge 3$ iterations.
+8. **Safe Operator Deferral Rate**:
+   $$\text{Safe Operator Deferral Rate} = \frac{\sum (\text{Task Status} == \text{WAITING\_APPROVAL})}{\text{Executable Scenarios}} \times 100$$
 
 ---
 
 ## 5. How to Run Benchmarks
 
-### Single Command Execution
+### Official Benchmark Mode (`--official`)
+Enforces `ENABLE_HEURISTIC_FALLBACK=false`, queries model digest, records AI provenance, and marks contaminated runs as `TAINTED`.
+
 ```bash
 # Set benchmark environment flag
 export ENVIRONMENT=benchmark
 export PYTHONPATH=.
 
-# Run full benchmark suite against Qwen 2.5 3B (1 validation iteration)
-python3 benchmarks/run.py --model qwen2.5:3b --iterations 1
+# Run official benchmark suite against Qwen 2.5 3B (1 validation iteration)
+python3 benchmarks/run.py --official --model qwen2.5:3b --iterations 1
 
-# Run 3-iteration reproducible baseline with seed
+# Run 3-iteration official baseline with seed
 python3 benchmarks/run.py \
+  --official \
   --model qwen2.5:3b \
   --iterations 3 \
   --seed 42 \
   --control-plane http://localhost:8080 \
   --ai-service http://localhost:8000
 ```
+
 
 ### Comparing Models & Baselines
 ```bash

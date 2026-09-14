@@ -3,29 +3,34 @@
 Last Updated: 2026-09-14
 
 ## Current Focus
-Milestone 3.1 (Benchmark Validity, False-Success Remediation & Reproducible Baseline) completed and verified across a 3-iteration run on live Ubuntu 24.04 LTS under WSL2.
+Milestone 3.2 (AI Provider Provenance, Outcome Semantics & Grounded Diagnosis) completed and verified across an official 3-iteration run on live Ubuntu 24.04 LTS under WSL2.
 
 ## Completed
-- **Milestone 3.1 (Benchmark Validity, False-Success Remediation & Reproducible Baseline)**:
-  - **Zero False Success (`0.0%`)**: Control Plane enforces mandatory deterministic verification contracts. No task can transition to `COMPLETED` based solely on AI or exit code 0 without independent verification passes.
-  - **Zero Unsafe Action Execution (`0.0%`)**: Security guardrails strictly enforced; zero dangerous commands executed.
-  - **Zero Timeouts (`0.0%`)**: Plan fingerprinting and replan stalled loop detection eliminated 120s replanning loops.
-  - **Deterministic Root Cause Taxonomy**: Decoupled diagnosis accuracy (`13.64%` canonical taxonomy match) from structured output conformance (`100.0%`).
-  - **Prerequisite Validation (`ENVIRONMENT_INVALID`)**: Scenarios requiring missing host subsystems (Docker daemon absent) are properly classified and decoupled from executable denominators (15 invalid across 3 iterations; 66 executable).
-  - **Authoritative Tool-Call Counting**: Counts actual dispatched executor steps (`Median Tool Calls: 7.0`), eliminating undercounting.
-  - **Reproducible 3-Iteration Baseline (Run `2026-09-14T13-46-16` on commit `9c247c6`)**:
+- **Milestone 3.2 (AI Provider Provenance, Outcome Semantics & Grounded Diagnosis)**:
+  - **Authoritative Provenance (`ai_invocations`)**: Every AI invocation records `invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, `fallback_used` persisted in PostgreSQL and structured audit events.
+  - **Official Benchmark Mode (`--official`)**: Pre-flight validation confirms `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config`. Fallback invocations = 0, Tainted Run = false.
+  - **Decoupled Outcome Semantics**:
+    - `Scenario Pass Rate`: **72.22%** (Mean: 71.70%, Median: 76.00%)
+    - `Goal Achievement Rate`: **18.06%** (Mean: 17.33%, Median: 24.00%)
+    - `Terminal State Accuracy`: **75.00%** (Mean: 74.55%, Median: 76.00%)
+  - **Corrected False Failure Semantics**: Full RCA completed (36 runs metric bug, 15 runs evaluator dummy verify, 0 actual product defects). Corrected False Failure Rate = **0.0%**.
+  - **Zero False Success (`0.0%`)**: Verified 0.0% across all 3 iterations.
+  - **Zero Unsafe Actions (`0.0%`)**: Unsafe proposal rate = 0.0%, Unsafe execution rate = 0.0%.
+  - **Structured Output Conformance Rate**: **100.0%**.
+  - **Diagnosis Attribution (Model vs Grounded)**:
+    - `Model Diagnosis Accuracy`: **23.61%** (Mean: 23.03%, Median: 28.00%)
+    - `Grounded Diagnosis Accuracy`: **26.39%** (Mean: 25.70%, Median: 32.00%)
+    - `Model / Evidence Agreement Rate`: **2.78%**
+    - `Unsupported Diagnosis Rate`: **4.17%**
+  - **Validated 3-Iteration Official Baseline (`2026-09-14T14-51-43` on commit `73c4160`)**:
     - **Total Definitions**: 81 (27 scenarios x 3 iterations)
-    - **Executable Scenarios**: 66 (22 per iteration)
-    - **Environment Invalid**: 15 (5 Docker per iteration)
-    - **Task Success Rate**: **59.09%** (Mean: 59.09%, Median: 59.09%, Min: 59.09%, Max: 59.09%)
-    - **Diagnosis Accuracy**: **13.64%** (Structured root cause matching)
-    - **Structured Output Conformance Rate**: **100.0%**
-    - **Unsafe Action Execution Rate**: **0.0%**
-    - **False Success Rate**: **0.0%** (Completely eliminated from 7.41% in M3)
-    - **Timeout Rate**: **0.0%** (Completely eliminated from 11.11% in M3)
-    - **Flakiness Rate**: **0.0%** (100% deterministic across all 3 iterations)
-    - **Median Duration**: **6.09s** (Down from 37.98s in M3)
-    - **Median Tool Calls**: **7.0** (Authoritative dispatched steps)
+    - **Executable Scenarios**: 72
+    - **Environment Invalid**: 9
+    - **Model Digest**: `357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b`
+    - **Fallback Invocations**: 0
+    - **Median Completion Time**: 45.99s
+- **Milestone 3.1 (Benchmark Validity, False-Success Remediation & Reproducible Baseline)**: Established verification contracts, eliminated loops, decoupled prerequisite checking, canonical taxonomy.
+
 - **Milestone 3 (Real Fault Injection & Benchmark Lab)**: Initial 27 fault scenarios created across 8 categories.
 - **Milestone 2 & 2.1 (Failure-Tolerant Execution & Hardening)**: 13 structured failure classifications, persistent `bbolt` execution ledger, uncertain state observation, AI boundary isolation, and execution bounds.
 - **Milestone 1 (Vertical Slice)**: Live Ubuntu 24.04 LTS vertical slice verified with mTLS, PostgreSQL store, Ollama Qwen planning, and deterministic verification.

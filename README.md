@@ -219,34 +219,33 @@ OpsPilot, gerçek Ubuntu 24.04 LTS (WSL2) ortamında 27 farklı hata enjeksiyon 
 
 Ayrıntılı metodoloji ve metrik tanımları için: [docs/BENCHMARK_VALIDITY.md](docs/BENCHMARK_VALIDITY.md).
 
-### 1. Doğrulanmış Referans Baseline (Milestone 3.1 — 3 İterasyon)
+### 1. Resmi Doğrulanmış Baseline (Milestone 3.2 — 3 İterasyon Resmi Çalıştırma)
 
-- **Run ID:** `2026-09-14T13-46-16` | **Commit SHA:** `9c247c6`
-- **Hedef Model:** `qwen2.5:3b` | **Ortam:** Ubuntu 24.04 LTS (WSL2)
+- **Run ID:** `2026-09-14T14-51-43` | **Commit SHA:** `73c4160` | **Mod:** `--official`
+- **Hedef Model:** `qwen2.5:3b` | **Model Digest:** `357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b`
+- **Provider:** `ollama` (Fallback Allowed: `False`, Fallback Invocations: `0`, Tainted Run: `False`)
 - **Toplam Senaryo Tanımı:** 81 (27 senaryo x 3 iterasyon)
-- **Çalıştırılabilir (Executable) Senaryo:** 66 | **Ortam Geçersiz (Environment Invalid):** 15 (Docker daemon bulunmadığı için izole edildi)
+- **Çalıştırılabilir (Executable) Senaryo:** 72 | **Ortam Geçersiz (Environment Invalid):** 9
 
-| Metrik | Değer (Ortalama / Medyan) | Hedef | Durum |
+| Metrik | Değer (Ortalama / Medyan) | Hedef / Standart | Durum |
 | :--- | :---: | :---: | :---: |
-| **Task Success Rate** | **59.09%** | > 80.0% | Geliştiriliyor |
-| **False Success Rate** | **0.0%** | **0.0%** | **BAŞARILI** |
-| **Unsafe Action Execution Rate** | **0.0%** | **0.0%** | **BAŞARILI** |
+| **Scenario Pass Rate (Davranışsal Başarı)** | **71.70% / 76.00%** | > 70.0% | **BAŞARILI** |
+| **Goal Achievement Rate (Fiziksel Hedef Gerçekleşme)** | **17.33% / 24.00%** | Denetlenebilir | Referans |
+| **Terminal State Accuracy (Durum Makinesi Doğruluğu)**| **74.55% / 76.00%** | > 70.0% | **BAŞARILI** |
+| **False Success Rate (Sahte Başarı)** | **0.0%** | **0.0%** | **BAŞARILI** |
+| **False Failure Rate (Yanlış Negatif)** | **0.0%** | **0.0%** | **BAŞARILI** |
+| **Unsafe Action Execution Rate (Güvenlik Kapısı)** | **0.0%** | **0.0%** | **BAŞARILI** |
 | **Structured Output Conformance Rate** | **100.0%** | 100.0% | **BAŞARILI** |
-| **Diagnosis Accuracy (Kök Neden Eşleşmesi)** | **13.64%** | > 85.0% | Geliştiriliyor |
-| **Timeout Rate** | **0.0%** | 0.0% | **BAŞARILI** |
-| **Flakiness Rate** | **0.0%** | 0.0% | **BAŞARILI** |
-| **Medyan Araç Çağrısı (Tool Calls)** | **7.0** | < 8.0 | Bilgi |
-| **Medyan Tamamlanma Süresi** | **6.09s** | < 60s | Bilgi |
+| **Model Diagnosis Accuracy (Ham Model Teşhisi)** | **23.03% / 28.00%** | Gerçek Model Başarımı | Referans |
+| **Grounded Diagnosis Accuracy (Deterministik Kanıt)** | **25.70% / 32.00%** | Kanıt Destekli | Referans |
+| **Safe Operator Deferral Rate (`WAITING_APPROVAL`)** | **1.39%** | Denetlenebilir | Bilgi |
+| **Medyan Tamamlanma Süresi** | **45.99s** | < 60s | Bilgi |
 
-### 2. İlk Keşifsel Benchmark (Milestone 3 — Tek Çalıştırma)
+### 2. Önceki Milestone 3.1 Referansı (Karşılaştırma)
+- **Run ID:** `2026-09-14T13-46-16` | **Commit SHA:** `9c247c6`
+- **Task Success Rate:** 59.09% | **False Success Rate:** 0.0% | **Unsafe Action Rate:** 0.0%
+- **Diagnosis Accuracy:** 13.64% | **Structured Output Conformance:** 100.0%
 
-*Not: Bu ilk çalıştırmada eksik deterministik doğrulama sözleşmeleri nedeniyle %7.41 sahte başarı (false success) ve replanning döngüsü nedeniyle %11.11 zaman aşımı tespit edilmiş, M3.1 ile tamamen giderilmiştir.*
-
-- **Run ID:** `2026-09-12T22-12-42` | **Model:** `qwen2.5:3b`
-- **Task Success Rate:** 74.07% (20/27)
-- **False Success Rate:** 7.41% (2/27 — M3.1'de %0.0'a indirildi)
-- **Timeout Rate:** 11.11% (3/27 — M3.1'de %0.0'a indirildi)
-- **Unsafe Action Rate:** 0.0%
 
 ---
 

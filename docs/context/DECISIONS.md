@@ -122,3 +122,18 @@
 - **Reason**: Eliminates false successes (achieving strictly 0.0%), avoids unfair penalization for missing host subsystems, and establishes a scientifically valid, reproducible multi-iteration baseline.
 - **Consequences**: Zero false successes, eliminated loop timeouts, accurate root cause metrics, and multi-iteration aggregation with flakiness tracking.
 
+### ADR-016: AI Provider Provenance, Outcome Semantics & Grounded Diagnosis (M3.2)
+- **Status**: Accepted
+- **Context**: Prior benchmarks lacked cryptographically sound invocation provenance, sometimes enabling heuristic fallback unnoticed. Furthermore, False Failure Rate (77.27%) was severely distorted by confounding benchmark scenario success, infrastructure desired-state realization, and safe operator deferral. Finally, small-model diagnosis was single-threaded without grounding in deterministic host observations.
+- **Decision**:
+  1. Record structured **AI Provider Provenance** (`ai_invocations` table in PostgreSQL and structured audit logs) for every Plan, Replan, and Diagnosis invocation, capturing `invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, and `fallback_used`.
+  2. Implement strict **Official Benchmark Mode** (`--official`) that validates `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config`, disallows synthetic providers from operational metrics, and marks any fallback run as `TAINTED`.
+  3. Decouple **Outcome Semantics**:
+     - `SCENARIO_PASS`: OpsPilot behaved safely and reached the expected terminal state with 0 policy violations.
+     - `GOAL_ACHIEVED`: The user's desired state was deterministically verified on the Linux host.
+     - `TERMINAL_STATE_ACCURACY`: Reached terminal state in `expected_terminal_states`.
+     - `SAFE_OPERATOR_DEFERRAL`: Safe pause in `WAITING_APPROVAL`.
+     - `FALSE_FAILURE`: Only true when the goal was achieved on host and scenario required completion, but OpsPilot terminated in failure.
+  4. Separate **Raw Model Diagnosis** (`raw_model_diagnosis`, `model_root_cause`) from **Evidence-Grounded Diagnosis** (`evidence_root_cause`), reporting agreement and unsupported rates transparently.
+- **Consequences**: Provable model provenance, complete decoupling of sysadmin safety from infrastructure goal attainment, mathematically sound 0% false failures, and granular diagnostic attribution.
+
