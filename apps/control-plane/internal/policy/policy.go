@@ -101,6 +101,7 @@ func (e *Engine) registerDefaultTools() {
 		ReadOnly:         false,
 		RequiresApproval: true,
 		TimeoutSec:       20,
+		VerificationType: "file_exists",
 	}
 
 	e.toolRegistry["execute_command"] = &ToolMetadata{

@@ -147,6 +147,28 @@ func (o *Orchestrator) StartTask(ctx context.Context, taskID string) error {
 			requiresApproval = true
 		}
 
+		strat := s.VerificationStrategy
+		if strat == nil {
+			if meta, ok := o.policyEngine.GetToolMetadata(s.Action); ok && meta.VerificationType != "" {
+				target := ""
+				if t, ok := s.Arguments["name"].(string); ok && t != "" {
+					target = t
+				} else if t, ok := s.Arguments["path"].(string); ok && t != "" {
+					target = t
+				} else if t, ok := s.Arguments["service"].(string); ok && t != "" {
+					target = t
+				}
+				if target != "" {
+					strat = &models.VerificationStrategy{
+						CheckType:  meta.VerificationType,
+						Target:     target,
+						Expected:   "verified",
+						TimeoutSec: 15,
+					}
+				}
+			}
+		}
+
 		step := &models.TaskStep{
 			ID:                   uuid.New().String(),
 			TaskID:               task.ID,
@@ -155,7 +177,7 @@ func (o *Orchestrator) StartTask(ctx context.Context, taskID string) error {
 			Arguments:            s.Arguments,
 			RiskLevel:            realRisk,
 			RequiresApproval:     needApp,
-			VerificationStrategy: s.VerificationStrategy,
+			VerificationStrategy: strat,
 			Status:               "PENDING",
 		}
 		taskSteps = append(taskSteps, step)
@@ -298,6 +320,7 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 
 	steps, _ := o.store.GetTaskSteps(ctx, task.ID)
 	backups := make(map[string]string) // cleanPath -> backupPath
+	successfulVerifications := 0
 
 	// Count total prior executed steps for this task
 	executedToolCalls := 0
@@ -575,6 +598,7 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 				o.executeReplan(ctx, task, agent, step, sf)
 				return
 			}
+			successfulVerifications++
 		}
 	}
 
@@ -617,10 +641,40 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 				o.executeReplan(ctx, task, agent, dummyStep, sf)
 				return
 			}
+			successfulVerifications++
 		}
 	}
 
-	// 6. Complete
+	// 6. Verification Contract: Mutating actions cannot complete without passing deterministic verification
+	hasMutatingSteps := false
+	for _, st := range steps {
+		if meta, ok := o.policyEngine.GetToolMetadata(st.Action); ok && !meta.ReadOnly {
+			hasMutatingSteps = true
+			break
+		}
+	}
+
+	if hasMutatingSteps && successfulVerifications == 0 {
+		task.ErrorMessage = "Verification contract violation: task performed mutating operations but zero deterministic verifications succeeded."
+		task.FailureDetails = &models.StructuredFailure{
+			Type:    models.FailureVerificationFailed,
+			Action:  "verify",
+			Message: task.ErrorMessage,
+		}
+		_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+		_ = o.store.UpdateTask(ctx, task)
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "TASK_FAILED",
+			Action:    "verify",
+			Details:   map[string]any{"reason": task.ErrorMessage},
+			CreatedAt: time.Now(),
+		})
+		return
+	}
+
+	// 7. Complete
 	task.ExecutionSummary = "All planned actions executed successfully and independently verified."
 	_, _ = o.machine.Transition(task, models.TaskStatusCompleted, task.ExecutionSummary, "")
 	_ = o.store.UpdateTask(ctx, task)
@@ -731,6 +785,31 @@ func (o *Orchestrator) executeRollback(ctx context.Context, task *models.Task, a
 }
 
 func (o *Orchestrator) executeReplan(ctx context.Context, task *models.Task, agent *models.Agent, failedStep *models.TaskStep, sf *models.StructuredFailure) {
+	// 1. Immediate terminal failure for non-existent resources (avoids uncontrolled timeout loops)
+	stderrLow := strings.ToLower(failedStep.Stderr)
+	stdoutLow := strings.ToLower(failedStep.Stdout)
+	if strings.Contains(stderrLow, "could not be found") || strings.Contains(stdoutLow, "could not be found") ||
+		(strings.Contains(stderrLow, "no such file or directory") && failedStep.Action == "get_service_status") {
+		task.ErrorMessage = fmt.Sprintf("Target resource for action '%s' does not exist on host: %s", failedStep.Action, strings.TrimSpace(failedStep.Stderr))
+		task.FailureDetails = &models.StructuredFailure{
+			Type:           models.FailureResourceNotFound,
+			Action:         failedStep.Action,
+			Message:        task.ErrorMessage,
+			RequiresReplan: false,
+		}
+		_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+		_ = o.store.UpdateTask(ctx, task)
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "RESOURCE_NOT_FOUND",
+			Action:    failedStep.Action,
+			Details:   map[string]any{"error": task.ErrorMessage},
+			CreatedAt: time.Now(),
+		})
+		return
+	}
+
 	if task.MaxReplans <= 0 {
 		task.MaxReplans = 3
 	}
@@ -824,6 +903,35 @@ func (o *Orchestrator) executeReplan(ctx context.Context, task *models.Task, age
 		return
 	}
 
+	// Detect replan loops and stalled cycles
+	var stepSignatures []string
+	for _, s := range newPlan.Steps {
+		stepSignatures = append(stepSignatures, fmt.Sprintf("%s:%v", s.Action, s.Arguments))
+	}
+	newPlanFingerprint := strings.Join(stepSignatures, "|")
+
+	if len(newPlan.Steps) == 0 || (task.ExecutionSummary != "" && task.ExecutionSummary == newPlanFingerprint) {
+		task.ErrorMessage = "Replan stalled: AI generated no progressive actions or repeated failed plan"
+		task.FailureDetails = &models.StructuredFailure{
+			Type:           models.FailureReplanExhausted,
+			Action:         "replan",
+			Message:        task.ErrorMessage,
+			RequiresReplan: false,
+		}
+		_, _ = o.machine.Transition(task, models.TaskStatusFailed, task.ErrorMessage, "system")
+		_ = o.store.UpdateTask(ctx, task)
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    task.ID,
+			AgentID:   agent.ID,
+			EventType: "REPLAN_STALLED",
+			Action:    "replan",
+			Details:   map[string]any{"fingerprint": newPlanFingerprint},
+			CreatedAt: time.Now(),
+		})
+		return
+	}
+	task.ExecutionSummary = newPlanFingerprint
+
 	task.ReplanCount++
 	task.PlanVersion++
 	task.AIPlan = newPlan
@@ -867,6 +975,28 @@ func (o *Orchestrator) executeReplan(ctx context.Context, task *models.Task, age
 			requiresApproval = true
 		}
 
+		strat := s.VerificationStrategy
+		if strat == nil {
+			if meta, ok := o.policyEngine.GetToolMetadata(s.Action); ok && meta.VerificationType != "" {
+				target := ""
+				if t, ok := s.Arguments["name"].(string); ok && t != "" {
+					target = t
+				} else if t, ok := s.Arguments["path"].(string); ok && t != "" {
+					target = t
+				} else if t, ok := s.Arguments["service"].(string); ok && t != "" {
+					target = t
+				}
+				if target != "" {
+					strat = &models.VerificationStrategy{
+						CheckType:  meta.VerificationType,
+						Target:     target,
+						Expected:   "verified",
+						TimeoutSec: 15,
+					}
+				}
+			}
+		}
+
 		step := &models.TaskStep{
 			ID:                   uuid.New().String(),
 			TaskID:               task.ID,
@@ -875,7 +1005,7 @@ func (o *Orchestrator) executeReplan(ctx context.Context, task *models.Task, age
 			Arguments:            s.Arguments,
 			RiskLevel:            realRisk,
 			RequiresApproval:     needApp,
-			VerificationStrategy: s.VerificationStrategy,
+			VerificationStrategy: strat,
 			Status:               "PENDING",
 		}
 		newSteps = append(newSteps, step)
@@ -1183,6 +1313,21 @@ func (o *Orchestrator) executeVerification(ctx context.Context, taskID string, a
 			return true, fmt.Sprintf("Package '%s' confirmed installed via dpkg", strat.Target)
 		}
 		return false, fmt.Sprintf("Package '%s' is not installed", strat.Target)
+
+	case "file_exists":
+		argsJSON, _ := json.Marshal(map[string]any{"path": strat.Target})
+		cmd := &opspilotv1.ExecuteStepCommand{
+			TaskId:         taskID,
+			StepId:         uuid.New().String(),
+			Action:         "read_file",
+			ArgumentsJson:  string(argsJSON),
+			TimeoutSeconds: 10,
+		}
+		res, err := o.grpcServer.DispatchStep(ctx, agent.ID, cmd)
+		if err != nil || res == nil || !res.Success {
+			return false, fmt.Sprintf("File '%s' verification failed: cannot be read or does not exist", strat.Target)
+		}
+		return true, fmt.Sprintf("File '%s' verified to exist and is readable", strat.Target)
 
 	default:
 		return true, fmt.Sprintf("Check type '%s' evaluated", strat.CheckType)

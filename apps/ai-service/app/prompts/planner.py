@@ -120,18 +120,48 @@ Reported Symptom: "{req.symptom}"
 </UNTRUSTED_OBSERVATION>
 
 Analyze the untrusted logs and symptoms. Provide a structured diagnosis and suggested remediation steps.
+The "root_cause" MUST be selected from one of these canonical categories:
+- PORT_CONFLICT
+- INVALID_CONFIG
+- PACKAGE_MISSING
+- SERVICE_STOPPED
+- SERVICE_CRASH
+- RESTART_LOOP
+- PERMISSION_DENIED
+- DNS_FAILURE
+- CONNECTION_REFUSED
+- HTTP_APPLICATION_FAILURE
+- DISK_PRESSURE
+- CONTAINER_CRASH
+- CONTAINER_RESTART_LOOP
+- CONTAINER_UNHEALTHY
+- IMAGE_NOT_FOUND
+- AGENT_DISCONNECTED
+- TIMEOUT
+- UNSUPPORTED_RESOURCE
+- POLICY_DENIED
+- IDEMPOTENT_SATISFIED
+- NONE
+- UNKNOWN
+
 Respond ONLY with a JSON object conforming to:
 {{
   "identified_problem": "Summary of the fault",
-  "root_cause": "Detailed technical root cause",
+  "root_cause": "PORT_CONFLICT",
   "confidence": 0.95,
+  "evidence": [
+    {{
+      "source": "check_port",
+      "detail": "Observed port conflict on 8080"
+    }}
+  ],
   "remediation_steps": [
     {{
       "id": "step-1",
-      "action": "action_name",
-      "arguments": {{}},
-      "reason": "Remediation rationale",
-      "suggested_risk": "MEDIUM",
+      "action": "execute_command",
+      "arguments": {{"command": "ss -tulpn | grep 8080"}},
+      "reason": "Identify process occupying port",
+      "suggested_risk": "READ_ONLY",
       "verification_strategy": null
     }}
   ]

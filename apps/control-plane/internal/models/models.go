@@ -43,6 +43,8 @@ const (
 	FailureDependencyFailure  FailureType = "DEPENDENCY_FAILURE"
 	FailureCancelled          FailureType = "CANCELLED"
 	FailureUncertainExecution FailureType = "UNCERTAIN_EXECUTION"
+	FailureResourceNotFound   FailureType = "RESOURCE_NOT_FOUND"
+	FailureReplanExhausted    FailureType = "REPLAN_EXHAUSTED"
 )
 
 type StructuredFailure struct {
