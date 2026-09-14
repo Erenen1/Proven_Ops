@@ -33,4 +33,5 @@ OpsPilot is a policy-controlled, AI-assisted infrastructure operations platform 
 
 - **Milestone 1 (Verified Vertical Slice)**: COMPLETED. Live Ubuntu 24.04 LTS under WSL2 execution verified (`Install nginx and expose on port 8080`).
 - **Milestone 2 & 2.1 (Failure Recovery & Hardening)**: COMPLETED. 13 structured failure types, persistent `bbolt` ledger, uncertain execution observation, config rollbacks, and task bounds.
-- **Milestone 3 (Real Fault Injection & Benchmark Lab)**: ACTIVE. 27 real Linux fault scenarios across 8 categories created and currently executing against live Ubuntu environment.
+- **Milestone 3 (Real Fault Injection & Benchmark Lab)**: COMPLETED. 27 real Linux fault scenarios across 8 categories with independent host verifiers.
+- **Milestone 3.1 (Benchmark Validity & False-Success Remediation)**: COMPLETED. Enforced deterministic verification contracts, eliminated false successes (0.0%), decoupled environment prerequisites (Docker daemon absent -> ENVIRONMENT_INVALID), prevented replan loops (0.0% timeouts), structured root cause taxonomy matching, and established a reproducible 3-iteration baseline.

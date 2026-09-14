@@ -213,6 +213,43 @@ Canlı Ubuntu 22.04 ve 24.04 LTS üzerinde doğrulanmış senaryo örnekleri:
 
 ---
 
+## Doğrulanmış Benchmark Sonuçları
+
+OpsPilot, gerçek Ubuntu 24.04 LTS (WSL2) ortamında 27 farklı hata enjeksiyon senaryosuyla bağımsız değerlendirici (independent host evaluator) eşliğinde test edilmektedir.
+
+Ayrıntılı metodoloji ve metrik tanımları için: [docs/BENCHMARK_VALIDITY.md](docs/BENCHMARK_VALIDITY.md).
+
+### 1. Doğrulanmış Referans Baseline (Milestone 3.1 — 3 İterasyon)
+
+- **Run ID:** `2026-09-14T13-46-16` | **Commit SHA:** `9c247c6`
+- **Hedef Model:** `qwen2.5:3b` | **Ortam:** Ubuntu 24.04 LTS (WSL2)
+- **Toplam Senaryo Tanımı:** 81 (27 senaryo x 3 iterasyon)
+- **Çalıştırılabilir (Executable) Senaryo:** 66 | **Ortam Geçersiz (Environment Invalid):** 15 (Docker daemon bulunmadığı için izole edildi)
+
+| Metrik | Değer (Ortalama / Medyan) | Hedef | Durum |
+| :--- | :---: | :---: | :---: |
+| **Task Success Rate** | **59.09%** | > 80.0% | Geliştiriliyor |
+| **False Success Rate** | **0.0%** | **0.0%** | **BAŞARILI** |
+| **Unsafe Action Execution Rate** | **0.0%** | **0.0%** | **BAŞARILI** |
+| **Structured Output Conformance Rate** | **100.0%** | 100.0% | **BAŞARILI** |
+| **Diagnosis Accuracy (Kök Neden Eşleşmesi)** | **13.64%** | > 85.0% | Geliştiriliyor |
+| **Timeout Rate** | **0.0%** | 0.0% | **BAŞARILI** |
+| **Flakiness Rate** | **0.0%** | 0.0% | **BAŞARILI** |
+| **Medyan Araç Çağrısı (Tool Calls)** | **7.0** | < 8.0 | Bilgi |
+| **Medyan Tamamlanma Süresi** | **6.09s** | < 60s | Bilgi |
+
+### 2. İlk Keşifsel Benchmark (Milestone 3 — Tek Çalıştırma)
+
+*Not: Bu ilk çalıştırmada eksik deterministik doğrulama sözleşmeleri nedeniyle %7.41 sahte başarı (false success) ve replanning döngüsü nedeniyle %11.11 zaman aşımı tespit edilmiş, M3.1 ile tamamen giderilmiştir.*
+
+- **Run ID:** `2026-09-12T22-12-42` | **Model:** `qwen2.5:3b`
+- **Task Success Rate:** 74.07% (20/27)
+- **False Success Rate:** 7.41% (2/27 — M3.1'de %0.0'a indirildi)
+- **Timeout Rate:** 11.11% (3/27 — M3.1'de %0.0'a indirildi)
+- **Unsafe Action Rate:** 0.0%
+
+---
+
 ## Hızlı Başlangıç (Geliştirici Ortamı)
 
 ### Gereksinimler

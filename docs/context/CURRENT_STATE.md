@@ -1,39 +1,34 @@
 # Current Project State
 
-Last Updated: 2026-09-12
+Last Updated: 2026-09-14
 
 ## Current Focus
-Milestone 3 (Real Fault Injection & Benchmark Lab) completed, proven, and benchmarked on live Ubuntu 24.04 LTS under WSL2 across 27 real-infrastructure fault scenarios with an independent host evaluator.
+Milestone 3.1 (Benchmark Validity, False-Success Remediation & Reproducible Baseline) completed and verified across a 3-iteration run on live Ubuntu 24.04 LTS under WSL2.
 
 ## Completed
-- **Milestone 3 (Real Fault Injection & Benchmark Lab) Verified on Ubuntu 24.04 LTS under WSL2**:
-  - **27 Real Linux Fault Scenarios**: Spanning 8 categories (Nginx, Systemd, Docker, Filesystem, Permissions, Network, Agent, AI Failure). All old offline JSON mocks removed.
-  - **Independent Evaluator**: External verification decoupled from agent self-reporting (`systemctl is-active`, `ss -tulpn`, `curl`, `dpkg`, file content state).
-  - **Benchmark Automation**: Single-command execution via `python3 benchmarks/run.py` supporting `--model`, `--iterations`, `--seed`, and comparative analysis via `benchmarks/compare.py`.
-  - **Safe Sandbox Execution**: Guaranteed cleanup and reset in `finally` blocks; zero risk to host root filesystems.
-  - **Empirical Measurement on Real Host (Run `2026-09-12T22-12-42` against Qwen 2.5 3B)**:
-    - **Total Scenarios**: 27
-    - **Passed**: 20
-    - **Failed**: 7
-    - **Task Success Rate**: **74.07%**
-    - **Diagnosis Accuracy**: **18.52%** (Strict schema enforcement on LLM output)
-    - **Recovery Rate**: **51.85%**
-    - **Unsafe Action Rate**: **0.0%** (Hard security constraint satisfied)
-    - **False Success Rate**: **7.41%** (Discrepancy detected where agent reported completion but independent host verification failed)
-    - **Human Intervention Rate**: **40.74%**
-    - **Rollback Success Rate**: **100.0%**
-    - **Median Duration**: **37.98s**
-    - **Median Tool Calls**: **1.0**
+- **Milestone 3.1 (Benchmark Validity, False-Success Remediation & Reproducible Baseline)**:
+  - **Zero False Success (`0.0%`)**: Control Plane enforces mandatory deterministic verification contracts. No task can transition to `COMPLETED` based solely on AI or exit code 0 without independent verification passes.
+  - **Zero Unsafe Action Execution (`0.0%`)**: Security guardrails strictly enforced; zero dangerous commands executed.
+  - **Zero Timeouts (`0.0%`)**: Plan fingerprinting and replan stalled loop detection eliminated 120s replanning loops.
+  - **Deterministic Root Cause Taxonomy**: Decoupled diagnosis accuracy (`13.64%` canonical taxonomy match) from structured output conformance (`100.0%`).
+  - **Prerequisite Validation (`ENVIRONMENT_INVALID`)**: Scenarios requiring missing host subsystems (Docker daemon absent) are properly classified and decoupled from executable denominators (15 invalid across 3 iterations; 66 executable).
+  - **Authoritative Tool-Call Counting**: Counts actual dispatched executor steps (`Median Tool Calls: 7.0`), eliminating undercounting.
+  - **Reproducible 3-Iteration Baseline (Run `2026-09-14T13-46-16` on commit `9c247c6`)**:
+    - **Total Definitions**: 81 (27 scenarios x 3 iterations)
+    - **Executable Scenarios**: 66 (22 per iteration)
+    - **Environment Invalid**: 15 (5 Docker per iteration)
+    - **Task Success Rate**: **59.09%** (Mean: 59.09%, Median: 59.09%, Min: 59.09%, Max: 59.09%)
+    - **Diagnosis Accuracy**: **13.64%** (Structured root cause matching)
+    - **Structured Output Conformance Rate**: **100.0%**
+    - **Unsafe Action Execution Rate**: **0.0%**
+    - **False Success Rate**: **0.0%** (Completely eliminated from 7.41% in M3)
+    - **Timeout Rate**: **0.0%** (Completely eliminated from 11.11% in M3)
+    - **Flakiness Rate**: **0.0%** (100% deterministic across all 3 iterations)
+    - **Median Duration**: **6.09s** (Down from 37.98s in M3)
+    - **Median Tool Calls**: **7.0** (Authoritative dispatched steps)
+- **Milestone 3 (Real Fault Injection & Benchmark Lab)**: Initial 27 fault scenarios created across 8 categories.
 - **Milestone 2 & 2.1 (Failure-Tolerant Execution & Hardening)**: 13 structured failure classifications, persistent `bbolt` execution ledger, uncertain state observation, AI boundary isolation, and execution bounds.
 - **Milestone 1 (Vertical Slice)**: Live Ubuntu 24.04 LTS vertical slice verified with mTLS, PostgreSQL store, Ollama Qwen planning, and deterministic verification.
-- **Regression Testing**: Original vertical slice ("Install nginx on this server and expose it on port 8080.") verified healthy with HTTP 200 pass.
-
-## In Progress
-- Finalizing Milestone 3 documentation and session handoff.
-
-## Next
-1. Expand model comparison runs across Qwen 2.5 7B / 14B models to measure reliability scaling.
-2. Build UI Benchmark Explorer in React Dashboard to visualize scenario runs, traces, and metrics.
 
 ## Blocked
 - None. All unit and integration tests pass.
