@@ -95,7 +95,7 @@ class BenchmarkReporter:
 
         # 1. Save summary.json
         with open(summary_path, "w", encoding="utf-8") as f:
-            f.write(summary.json(indent=2) if hasattr(summary, "json") else summary.model_dump_json(indent=2))
+            f.write(summary.model_dump_json(indent=2) if hasattr(summary, "model_dump_json") else summary.json(indent=2))
 
         # 2. Save report.md
         md_content = BenchmarkReporter.generate_markdown(summary)
@@ -105,4 +105,4 @@ class BenchmarkReporter:
         # 3. Save scenarios.jsonl
         with open(jsonl_path, "w", encoding="utf-8") as f:
             for r in summary.results:
-                f.write((r.json() if hasattr(r, "json") else r.model_dump_json()) + "\n")
+                f.write((r.model_dump_json() if hasattr(r, "model_dump_json") else r.json()) + "\n")

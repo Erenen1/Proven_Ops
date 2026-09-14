@@ -15,8 +15,8 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Randomization seed")
     parser.add_argument("--scenarios-dir", type=str, default="benchmarks/scenarios", help="Scenarios root directory")
     parser.add_argument("--results-dir", type=str, default="benchmarks/results", help="Results output directory")
-    default_cp = os.environ.get("CONTROL_PLANE_URL", "http://172.21.96.1:8080" if os.name != "nt" else "http://localhost:8080")
-    default_ai = os.environ.get("AI_SERVICE_URL", "http://172.21.96.1:8000" if os.name != "nt" else "http://localhost:8000")
+    default_cp = os.environ.get("CONTROL_PLANE_URL", "http://localhost:8080")
+    default_ai = os.environ.get("AI_SERVICE_URL", "http://localhost:8000")
 
     parser.add_argument("--control-plane", type=str, default=default_cp, help="Control Plane HTTP URL")
     parser.add_argument("--ai-service", type=str, default=default_ai, help="AI Service HTTP URL")

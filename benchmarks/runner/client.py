@@ -4,7 +4,7 @@ from typing import Dict, Any, Tuple, List
 import httpx
 
 class OpsPilotClient:
-    def __init__(self, control_plane_url: str = "http://172.21.96.1:8080", ai_service_url: str = "http://localhost:8000"):
+    def __init__(self, control_plane_url: str = "http://localhost:8080", ai_service_url: str = "http://localhost:8000"):
         self.cp_url = control_plane_url
         self.ai_url = ai_service_url
 

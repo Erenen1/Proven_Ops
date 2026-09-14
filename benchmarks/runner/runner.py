@@ -34,8 +34,8 @@ class BenchmarkRunner:
         self.seed = seed
         self.scenarios_dir = scenarios_dir
         self.results_dir = results_dir
-        cp_url = control_plane_url or os.environ.get("CONTROL_PLANE_URL", "http://172.21.96.1:8080" if os.name != "nt" else "http://localhost:8080")
-        ai_url = ai_service_url or os.environ.get("AI_SERVICE_URL", "http://172.21.96.1:8000" if os.name != "nt" else "http://localhost:8000")
+        cp_url = control_plane_url or os.environ.get("CONTROL_PLANE_URL", "http://localhost:8080")
+        ai_url = ai_service_url or os.environ.get("AI_SERVICE_URL", "http://localhost:8000")
         self.client = OpsPilotClient(cp_url, ai_url)
         self.evaluator = IndependentEvaluator()
         self.injector = FaultInjector()

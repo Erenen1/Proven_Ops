@@ -6,8 +6,8 @@ from typing import Dict, Any, Tuple, List
 
 class BaselineChecker:
     def __init__(self, control_plane_url: str = None, ai_service_url: str = None):
-        self.cp_url = control_plane_url or os.environ.get("CONTROL_PLANE_URL", "http://172.21.96.1:8080" if os.name != "nt" else "http://localhost:8080")
-        self.ai_url = ai_service_url or os.environ.get("AI_SERVICE_URL", "http://172.21.96.1:8000" if os.name != "nt" else "http://localhost:8000")
+        self.cp_url = control_plane_url or os.environ.get("CONTROL_PLANE_URL", "http://localhost:8080")
+        self.ai_url = ai_service_url or os.environ.get("AI_SERVICE_URL", "http://localhost:8000")
 
     def check_all(self) -> Dict[str, Any]:
         results = {
