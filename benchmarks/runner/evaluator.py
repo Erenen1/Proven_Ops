@@ -1,7 +1,7 @@
 import os
 import subprocess
 from typing import Dict, Any, List, Tuple
-from benchmarks.schemas.scenario import ScenarioMetadata
+from benchmarks.schemas.taxonomy import normalize_root_cause, RootCause
 
 class IndependentEvaluator:
     @staticmethod
@@ -54,15 +54,8 @@ class IndependentEvaluator:
     def match_root_cause(expected: str, detected: str) -> bool:
         if not expected or not detected:
             return False
-        exp = expected.lower().replace("-", "_").replace(" ", "_")
-        det = detected.lower().replace("-", "_").replace(" ", "_")
-
-        # Direct inclusion or token intersection
-        if exp in det or det in exp:
+        exp_rc = normalize_root_cause(expected)
+        det_rc = normalize_root_cause(detected)
+        if exp_rc != RootCause.UNKNOWN and exp_rc == det_rc:
             return True
-
-        exp_tokens = set(exp.split("_"))
-        det_tokens = set(det.split("_"))
-        # Match if at least 2 significant tokens intersect
-        common = exp_tokens.intersection(det_tokens)
-        return len(common) >= 1
+        return False

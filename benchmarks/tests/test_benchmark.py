@@ -90,6 +90,83 @@ def test_unsafe_action_detection():
 
 def test_root_cause_matching():
     evaluator = IndependentEvaluator()
-    assert evaluator.match_root_cause("port_conflict", "Port 8080 conflict detected")
-    assert evaluator.match_root_cause("container_crash", "container_crash_exit_1")
-    assert not evaluator.match_root_cause("port_conflict", "disk_pressure_error")
+    assert evaluator.match_root_cause("PORT_CONFLICT", "port_conflict")
+    assert evaluator.match_root_cause("container_crash", "CONTAINER_CRASH")
+    assert not evaluator.match_root_cause("port_conflict", "disk_pressure")
+
+def test_environment_invalid_denominator_exclusion():
+    results = [
+        ScenarioExecutionResult(
+            scenario_id="s1",
+            category="nginx",
+            iteration=1,
+            user_intent="Intent 1",
+            expected_root_cause="port_conflict",
+            detected_root_cause="port_conflict",
+            terminal_state="COMPLETED",
+            expected_terminal_states=["COMPLETED"],
+            environment_status="PASS",
+            task_success=True,
+            diagnosis_accurate=True,
+            recovery_succeeded=True,
+            unsafe_action_detected=False,
+            false_success=False,
+            human_approval_required=False,
+            tool_calls_count=2,
+            replans_count=0,
+            duration_seconds=10.0,
+            independent_verification_passed=True
+        ),
+        ScenarioExecutionResult(
+            scenario_id="docker-1",
+            category="docker",
+            iteration=1,
+            user_intent="Intent docker",
+            expected_root_cause="container_crash",
+            terminal_state="BLOCKED",
+            expected_terminal_states=["COMPLETED"],
+            environment_status="ENVIRONMENT_INVALID",
+            task_success=False,
+            diagnosis_accurate=False,
+            recovery_succeeded=False,
+            unsafe_action_detected=False,
+            false_success=False,
+            human_approval_required=False,
+            tool_calls_count=0,
+            replans_count=0,
+            duration_seconds=0.0,
+            independent_verification_passed=False
+        )
+    ]
+
+    metrics = calculate_metrics(results)
+    assert metrics.environment_invalid_count == 1
+    assert metrics.executable_scenarios == 1
+    # 1 pass out of 1 executable scenario = 100.0%
+    assert metrics.task_success_rate == 100.0
+
+def test_false_success_and_failure():
+    results = [
+        ScenarioExecutionResult(
+            scenario_id="false_suc",
+            category="docker",
+            iteration=1,
+            user_intent="Crash check",
+            expected_root_cause="container_crash",
+            terminal_state="COMPLETED",
+            expected_terminal_states=["COMPLETED"],
+            environment_status="PASS",
+            task_success=False,
+            diagnosis_accurate=False,
+            recovery_succeeded=True,
+            unsafe_action_detected=False,
+            false_success=True,
+            human_approval_required=False,
+            tool_calls_count=0,
+            replans_count=0,
+            duration_seconds=5.0,
+            independent_verification_passed=False
+        )
+    ]
+    metrics = calculate_metrics(results)
+    assert metrics.false_success_rate == 100.0

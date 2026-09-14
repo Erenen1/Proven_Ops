@@ -12,6 +12,13 @@ class BenchmarkCategory(str, Enum):
     AGENT = "agent"
     AI_FAILURE = "ai_failure"
 
+class ExecutionStatus(str, Enum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+    BLOCKED = "BLOCKED"
+    ENVIRONMENT_INVALID = "ENVIRONMENT_INVALID"
+    SKIPPED = "SKIPPED"
+
 class TerminalState(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
@@ -38,3 +45,6 @@ class ScenarioMetadata(BaseModel):
     timeout_seconds: int = 180
     synthetic_ai_failure_test: bool = False
     verification: Optional[VerificationCheck] = None
+    requirements: List[str] = Field(default_factory=list)
+    success_criteria: Optional[str] = None
+    failure_criteria: Optional[str] = None
