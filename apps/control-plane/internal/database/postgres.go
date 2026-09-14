@@ -816,3 +816,57 @@ func (s *PostgresStore) GetVerificationResults(ctx context.Context, taskID strin
 	}
 	return list, nil
 }
+
+// -------------------------------------------------------------
+// AI INVOCATIONS PROVENANCE
+// -------------------------------------------------------------
+
+func (s *PostgresStore) SaveAIInvocation(ctx context.Context, inv *models.AIProvenanceData) error {
+	if inv.CreatedAt.IsZero() {
+		inv.CreatedAt = time.Now()
+	}
+	query := `
+		INSERT INTO ai_invocations (
+			invocation_id, task_id, scenario_id, purpose, provider, model, model_digest,
+			fallback_used, fallback_reason, request_started_at, request_finished_at,
+			latency_ms, success, schema_valid, error_type, created_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11,
+			$12, $13, $14, $15, $16
+		) ON CONFLICT (invocation_id) DO NOTHING`
+	started := inv.CreatedAt.Add(-time.Duration(inv.LatencyMS) * time.Millisecond)
+	_, err := s.pool.Exec(ctx, query,
+		inv.InvocationID, inv.TaskID, inv.ScenarioID, inv.Purpose, inv.Provider, inv.Model, inv.ModelDigest,
+		inv.FallbackUsed, inv.FallbackReason, started, inv.CreatedAt,
+		inv.LatencyMS, true, inv.SchemaValid, inv.ErrorType, inv.CreatedAt,
+	)
+	return err
+}
+
+func (s *PostgresStore) ListAIInvocations(ctx context.Context, taskID string) ([]*models.AIProvenanceData, error) {
+	query := `
+		SELECT invocation_id, COALESCE(task_id, ''), COALESCE(scenario_id, ''), purpose, provider, model, COALESCE(model_digest, ''),
+		       fallback_used, COALESCE(fallback_reason, ''), latency_ms, schema_valid, COALESCE(error_type, ''), created_at
+		FROM ai_invocations
+		WHERE ($1 = '' OR task_id = $1)
+		ORDER BY created_at ASC`
+	rows, err := s.pool.Query(ctx, query, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*models.AIProvenanceData
+	for rows.Next() {
+		var inv models.AIProvenanceData
+		if err := rows.Scan(
+			&inv.InvocationID, &inv.TaskID, &inv.ScenarioID, &inv.Purpose, &inv.Provider, &inv.Model, &inv.ModelDigest,
+			&inv.FallbackUsed, &inv.FallbackReason, &inv.LatencyMS, &inv.SchemaValid, &inv.ErrorType, &inv.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, &inv)
+	}
+	return list, nil
+}

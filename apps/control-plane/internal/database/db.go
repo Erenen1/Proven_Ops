@@ -47,6 +47,10 @@ type Store interface {
 	// Verification Results
 	SaveVerificationResult(ctx context.Context, res *models.VerificationResult) error
 	GetVerificationResults(ctx context.Context, taskID string) ([]*models.VerificationResult, error)
+
+	// AI Invocations Provenance
+	SaveAIInvocation(ctx context.Context, inv *models.AIProvenanceData) error
+	ListAIInvocations(ctx context.Context, taskID string) ([]*models.AIProvenanceData, error)
 }
 
 type MemoryStore struct {
@@ -58,6 +62,7 @@ type MemoryStore struct {
 	auditEvents   []*models.AuditEvent
 	runbooks      map[string]*models.Runbook
 	verifications map[string][]*models.VerificationResult
+	aiInvocations []*models.AIProvenanceData
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -69,6 +74,7 @@ func NewMemoryStore() *MemoryStore {
 		auditEvents:   make([]*models.AuditEvent, 0),
 		runbooks:      make(map[string]*models.Runbook),
 		verifications: make(map[string][]*models.VerificationResult),
+		aiInvocations: make([]*models.AIProvenanceData, 0),
 	}
 }
 
@@ -283,6 +289,28 @@ func (s *MemoryStore) GetVerificationResults(ctx context.Context, taskID string)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.verifications[taskID], nil
+}
+
+func (s *MemoryStore) SaveAIInvocation(ctx context.Context, inv *models.AIProvenanceData) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if inv.CreatedAt.IsZero() {
+		inv.CreatedAt = time.Now()
+	}
+	s.aiInvocations = append(s.aiInvocations, inv)
+	return nil
+}
+
+func (s *MemoryStore) ListAIInvocations(ctx context.Context, taskID string) ([]*models.AIProvenanceData, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var res []*models.AIProvenanceData
+	for _, inv := range s.aiInvocations {
+		if taskID == "" || inv.TaskID == taskID {
+			res = append(res, inv)
+		}
+	}
+	return res, nil
 }
 
 // ConnectPool attempts PostgreSQL connection or returns nil if unavailable

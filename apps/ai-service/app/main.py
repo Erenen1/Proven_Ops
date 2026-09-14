@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
@@ -48,13 +49,29 @@ async def health_check():
         "ollama_base_url": settings.OLLAMA_BASE_URL
     }
 
+@app.get("/api/v1/config")
+async def get_config():
+    allow_fallback = os.getenv("ENABLE_HEURISTIC_FALLBACK", "false").lower() in ("true", "1")
+    digest = await provider.get_model_digest()
+    return {
+        "status": "ok",
+        "provider": "ollama",
+        "model": provider.model_name,
+        "model_digest": digest,
+        "fallback_allowed": allow_fallback,
+        "ollama_base_url": provider.base_url
+    }
+
 @app.post("/api/v1/plan", response_model=PlanResponse)
 async def create_plan(req: PlanRequest):
     logger.info(f"Generating plan for task={req.task_id}, intent='{req.intent}'")
     user_prompt = build_planning_prompt(req)
     try:
-        raw_json = await provider.generate_json(SYSTEM_PROMPT, user_prompt)
+        raw_json, prov = await provider.generate_json_with_provenance(
+            SYSTEM_PROMPT, user_prompt, purpose="PLAN", task_id=req.task_id
+        )
         plan = PlanResponse.model_validate(raw_json)
+        plan.provenance = prov
         return plan
     except Exception as e:
         logger.error(f"Planning failed: {str(e)}", exc_info=True)
@@ -65,8 +82,11 @@ async def replan_task(req: ReplanRequest):
     logger.info(f"Replanning task={req.task_id}, failed_step={req.failed_step_id}")
     user_prompt = build_replanning_prompt(req)
     try:
-        raw_json = await provider.generate_json(SYSTEM_PROMPT, user_prompt)
+        raw_json, prov = await provider.generate_json_with_provenance(
+            SYSTEM_PROMPT, user_prompt, purpose="REPLAN", task_id=req.task_id
+        )
         plan = PlanResponse.model_validate(raw_json)
+        plan.provenance = prov
         return plan
     except Exception as e:
         logger.error(f"Replanning failed: {str(e)}", exc_info=True)
@@ -77,8 +97,11 @@ async def diagnose_issue(req: DiagnosisRequest):
     logger.info(f"Diagnosing issue for task={req.task_id}, symptom='{req.symptom}'")
     user_prompt = build_diagnosis_prompt(req)
     try:
-        raw_json = await provider.generate_json(SYSTEM_PROMPT, user_prompt)
+        raw_json, prov = await provider.generate_json_with_provenance(
+            SYSTEM_PROMPT, user_prompt, purpose="DIAGNOSIS", task_id=req.task_id
+        )
         diagnosis = DiagnosisResponse.model_validate(raw_json)
+        diagnosis.provenance = prov
         return diagnosis
     except Exception as e:
         logger.error(f"Diagnosis failed: {str(e)}", exc_info=True)

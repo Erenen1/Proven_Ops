@@ -128,11 +128,28 @@ type Task struct {
 	CompletedAt      *time.Time         `json:"completed_at,omitempty"`
 }
 
+type AIProvenanceData struct {
+	InvocationID   string    `json:"invocation_id"`
+	TaskID         string    `json:"task_id,omitempty"`
+	ScenarioID     string    `json:"scenario_id,omitempty"`
+	Purpose        string    `json:"purpose"`
+	Provider       string    `json:"provider"`
+	Model          string    `json:"model"`
+	ModelDigest    string    `json:"model_digest,omitempty"`
+	FallbackUsed   bool      `json:"fallback_used"`
+	FallbackReason string    `json:"fallback_reason,omitempty"`
+	LatencyMS      int64     `json:"latency_ms"`
+	SchemaValid    bool      `json:"schema_valid"`
+	ErrorType      string    `json:"error_type,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type AIPlanData struct {
 	Goal                string                  `json:"goal"`
 	Reasoning           string                  `json:"reasoning"`
 	Steps               []*AIStepPlan           `json:"steps"`
 	OverallVerification []*VerificationStrategy `json:"overall_verification,omitempty"`
+	Provenance          *AIProvenanceData       `json:"provenance,omitempty"`
 }
 
 type AIStepPlan struct {

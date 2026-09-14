@@ -68,7 +68,8 @@ Respond ONLY with a JSON object conforming to the schema above:
 """
 
 def build_replanning_prompt(req: ReplanRequest) -> str:
-    prior_steps_json = json.dumps([s.model_dump() for s in req.prior_successful_steps], indent=2)
+    prior_steps = [s.model_dump() if hasattr(s, "model_dump") else s for s in (req.prior_successful_steps or [])]
+    prior_steps_json = json.dumps(prior_steps, indent=2)
     return f"""### REPLANNING REQUEST
 A previous step in the execution plan failed.
 

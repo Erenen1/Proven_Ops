@@ -1222,6 +1222,35 @@ func (o *Orchestrator) callAIPlanning(ctx context.Context, path string, payload 
 	if err := json.NewDecoder(resp.Body).Decode(&plan); err != nil {
 		return nil, err
 	}
+
+	if plan.Provenance != nil {
+		if taskID, ok := payload["task_id"].(string); ok && plan.Provenance.TaskID == "" {
+			plan.Provenance.TaskID = taskID
+		}
+		_ = o.store.SaveAIInvocation(ctx, plan.Provenance)
+
+		eventType := "AI_INVOCATION_COMPLETED"
+		if plan.Provenance.FallbackUsed {
+			eventType = "AI_FALLBACK_USED"
+		}
+		_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
+			TaskID:    plan.Provenance.TaskID,
+			EventType: eventType,
+			Action:    "AI_PLANNING",
+			Details: map[string]any{
+				"invocation_id":   plan.Provenance.InvocationID,
+				"purpose":         plan.Provenance.Purpose,
+				"provider":        plan.Provenance.Provider,
+				"model":           plan.Provenance.Model,
+				"model_digest":    plan.Provenance.ModelDigest,
+				"fallback_used":   plan.Provenance.FallbackUsed,
+				"fallback_reason": plan.Provenance.FallbackReason,
+				"latency_ms":      plan.Provenance.LatencyMS,
+			},
+			CreatedAt: time.Now(),
+		})
+	}
+
 	return &plan, nil
 }
 

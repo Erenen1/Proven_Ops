@@ -40,11 +40,26 @@ class PlanRequest(BaseModel):
     supported_tools: List[str] = Field(default_factory=list)
     untrusted_observations: Optional[List[str]] = Field(default_factory=list, description="Host command outputs and logs, strictly isolated")
 
+class ProvenanceMetadata(BaseModel):
+    invocation_id: str
+    task_id: Optional[str] = None
+    scenario_id: Optional[str] = None
+    purpose: str = "PLAN"
+    provider: str = "ollama"
+    model: str
+    model_digest: Optional[str] = None
+    fallback_used: bool = False
+    fallback_reason: Optional[str] = None
+    latency_ms: int = 0
+    schema_valid: bool = True
+    error_type: Optional[str] = None
+
 class PlanResponse(BaseModel):
     goal: str
     reasoning: str
     steps: List[StepPlan]
     overall_verification: Optional[List[VerificationRequirement]] = Field(default_factory=list)
+    provenance: Optional[ProvenanceMetadata] = None
 
 class RootCause(str, Enum):
     PORT_CONFLICT = "PORT_CONFLICT"
@@ -97,3 +112,4 @@ class DiagnosisResponse(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
     evidence: Optional[List[DiagnosisEvidence]] = Field(default_factory=list)
     remediation_steps: List[StepPlan] = Field(default_factory=list)
+    provenance: Optional[ProvenanceMetadata] = None

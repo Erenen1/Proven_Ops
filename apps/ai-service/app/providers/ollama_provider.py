@@ -1,17 +1,50 @@
 import json
 import os
 import re
+import time
+import uuid
 import httpx
-from typing import Dict, Any
+from typing import Dict, Any, Tuple, Optional
 from .base import LLMProvider
+from ..models.schemas import ProvenanceMetadata
 
 class OllamaProvider(LLMProvider):
     def __init__(self, base_url: str, model_name: str, timeout: float = 60.0):
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.timeout = timeout
+        self._model_digest: Optional[str] = None
+
+    async def get_model_digest(self) -> Optional[str]:
+        if self._model_digest:
+            return self._model_digest
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                res = await client.get(f"{self.base_url}/api/tags")
+                if res.status_code == 200:
+                    data = res.json()
+                    for m in data.get("models", []):
+                        if m.get("name") == self.model_name or m.get("model") == self.model_name:
+                            self._model_digest = m.get("digest")
+                            return self._model_digest
+        except Exception:
+            pass
+        return None
 
     async def generate_json(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
+        data, _ = await self.generate_json_with_provenance(system_prompt, user_prompt)
+        return data
+
+    async def generate_json_with_provenance(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        purpose: str = "PLAN",
+        task_id: Optional[str] = None,
+        scenario_id: Optional[str] = None
+    ) -> Tuple[Dict[str, Any], ProvenanceMetadata]:
+        invocation_id = str(uuid.uuid4())
+        start_time = time.time()
         url = f"{self.base_url}/api/chat"
         payload = {
             "model": self.model_name,
@@ -26,6 +59,7 @@ class OllamaProvider(LLMProvider):
             }
         }
 
+        digest = await self.get_model_digest()
         allow_fallback = os.getenv("ENABLE_HEURISTIC_FALLBACK", "false").lower() in ("true", "1")
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -33,15 +67,45 @@ class OllamaProvider(LLMProvider):
                 if res.status_code == 200:
                     data = res.json()
                     content = data.get("message", {}).get("content", "")
-                    return self._clean_and_parse_json(content)
+                    parsed = self._clean_and_parse_json(content)
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    prov = ProvenanceMetadata(
+                        invocation_id=invocation_id,
+                        task_id=task_id,
+                        scenario_id=scenario_id,
+                        purpose=purpose,
+                        provider="ollama",
+                        model=self.model_name,
+                        model_digest=digest,
+                        fallback_used=False,
+                        latency_ms=latency_ms,
+                        schema_valid=True
+                    )
+                    return parsed, prov
                 elif not allow_fallback:
                     raise RuntimeError(f"Ollama returned HTTP {res.status_code}: {res.text}")
         except Exception as e:
             if not allow_fallback:
                 raise RuntimeError(f"Ollama planning failure: {e}") from e
-            pass
+            fallback_err = str(e)
 
-        return self._heuristic_fallback(user_prompt)
+        # Fallback used
+        latency_ms = int((time.time() - start_time) * 1000)
+        fallback_data = self._heuristic_fallback(user_prompt)
+        prov = ProvenanceMetadata(
+            invocation_id=invocation_id,
+            task_id=task_id,
+            scenario_id=scenario_id,
+            purpose=purpose,
+            provider="heuristic_fallback",
+            model=self.model_name,
+            model_digest=digest,
+            fallback_used=True,
+            fallback_reason=fallback_err if 'fallback_err' in locals() else "HTTP non-200 or connection error",
+            latency_ms=latency_ms,
+            schema_valid=True
+        )
+        return fallback_data, prov
 
     def _clean_and_parse_json(self, text: str) -> Dict[str, Any]:
         text = text.strip()
