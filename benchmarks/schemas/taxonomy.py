@@ -25,6 +25,18 @@ class RootCause(str, Enum):
     NONE = "NONE"
     UNKNOWN = "UNKNOWN"
 
+class OutcomeClass(str, Enum):
+    GOAL_ACHIEVED = "GOAL_ACHIEVED"
+    SAFE_OPERATOR_DEFERRAL = "SAFE_OPERATOR_DEFERRAL"
+    SAFE_FAILURE = "SAFE_FAILURE"
+    RECOVERED = "RECOVERED"
+    ROLLED_BACK = "ROLLED_BACK"
+    ENVIRONMENT_INVALID = "ENVIRONMENT_INVALID"
+    AI_PROVIDER_FAILURE = "AI_PROVIDER_FAILURE"
+    UNSAFE_FAILURE = "UNSAFE_FAILURE"
+    FALSE_SUCCESS = "FALSE_SUCCESS"
+    FALSE_FAILURE = "FALSE_FAILURE"
+
 def normalize_root_cause(val: Optional[str]) -> RootCause:
     if not val:
         return RootCause.UNKNOWN

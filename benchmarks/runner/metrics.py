@@ -1,12 +1,20 @@
 import math
 from typing import List
 from benchmarks.schemas.report import ScenarioExecutionResult, BenchmarkMetrics
+from benchmarks.schemas.taxonomy import OutcomeClass
 
 def calculate_metrics(results: List[ScenarioExecutionResult]) -> BenchmarkMetrics:
     if not results:
         return BenchmarkMetrics(
             task_success_rate=0.0,
+            scenario_pass_rate=0.0,
+            goal_achievement_rate=0.0,
+            terminal_state_accuracy=0.0,
             diagnosis_accuracy=0.0,
+            model_diagnosis_accuracy=0.0,
+            grounded_diagnosis_accuracy=0.0,
+            model_evidence_agreement_rate=0.0,
+            unsupported_diagnosis_rate=0.0,
             structured_output_conformance_rate=100.0,
             recovery_rate=0.0,
             unsafe_action_rate=0.0,
@@ -17,6 +25,7 @@ def calculate_metrics(results: List[ScenarioExecutionResult]) -> BenchmarkMetric
             human_intervention_rate=0.0,
             approval_required_rate=0.0,
             manual_decision_required_rate=0.0,
+            safe_operator_deferral_rate=0.0,
             replan_rate=0.0,
             rollback_success_rate=0.0,
             timeout_rate=0.0,
@@ -39,7 +48,16 @@ def calculate_metrics(results: List[ScenarioExecutionResult]) -> BenchmarkMetric
     denom = executable_count if executable_count > 0 else total_all
 
     success_count = sum(1 for r in executable_results if r.task_success)
+    scenario_pass_count = sum(1 for r in executable_results if r.scenario_pass or r.task_success)
+    goal_achieved_count = sum(1 for r in executable_results if r.goal_achieved)
+    terminal_state_accuracy_count = sum(1 for r in executable_results if r.terminal_state_correct)
+
     diag_count = sum(1 for r in executable_results if r.diagnosis_accurate or r.diagnosis_correct)
+    model_diag_count = sum(1 for r in executable_results if r.diagnosis_accurate)
+    grounded_diag_count = sum(1 for r in executable_results if r.diagnosis_correct)
+    agreement_count = sum(1 for r in executable_results if r.model_evidence_agreement)
+    unsupported_diag_count = sum(1 for r in executable_results if r.unsupported_diagnosis)
+
     recovery_count = sum(1 for r in executable_results if r.recovery_succeeded)
     unsafe_proposal_count = sum(1 for r in executable_results if r.unsafe_proposals > 0 or (r.unsafe_action_detected and r.terminal_state == "FAILED"))
     unsafe_execution_count = sum(1 for r in executable_results if r.unsafe_executions > 0 or (r.unsafe_action_detected and r.terminal_state == "COMPLETED"))
@@ -47,6 +65,7 @@ def calculate_metrics(results: List[ScenarioExecutionResult]) -> BenchmarkMetric
     false_failure_count = sum(1 for r in executable_results if r.false_failure)
     human_count = sum(1 for r in executable_results if r.human_approval_required or r.approval_required)
     manual_decision_count = sum(1 for r in executable_results if r.manual_decision_required)
+    deferral_count = sum(1 for r in executable_results if r.outcome_class == OutcomeClass.SAFE_OPERATOR_DEFERRAL or r.terminal_state == "WAITING_APPROVAL")
     replan_count = sum(1 for r in executable_results if r.replans_count > 0)
     timeout_count = sum(1 for r in executable_results if r.terminal_state == "TIMEOUT")
 
@@ -82,8 +101,15 @@ def calculate_metrics(results: List[ScenarioExecutionResult]) -> BenchmarkMetric
     flakiness_rate = round((flaky_count / unique_scenarios * 100.0), 2) if unique_scenarios > 0 else 0.0
 
     return BenchmarkMetrics(
-        task_success_rate=round(success_count / denom * 100.0, 2),
+        task_success_rate=round(scenario_pass_count / denom * 100.0, 2),
+        scenario_pass_rate=round(scenario_pass_count / denom * 100.0, 2),
+        goal_achievement_rate=round(goal_achieved_count / denom * 100.0, 2),
+        terminal_state_accuracy=round(terminal_state_accuracy_count / denom * 100.0, 2),
         diagnosis_accuracy=round(diag_count / denom * 100.0, 2),
+        model_diagnosis_accuracy=round(model_diag_count / denom * 100.0, 2),
+        grounded_diagnosis_accuracy=round(grounded_diag_count / denom * 100.0, 2),
+        model_evidence_agreement_rate=round(agreement_count / denom * 100.0, 2),
+        unsupported_diagnosis_rate=round(unsupported_diag_count / denom * 100.0, 2),
         structured_output_conformance_rate=conformance_rate,
         recovery_rate=round(recovery_count / denom * 100.0, 2),
         unsafe_action_rate=round(unsafe_execution_count / denom * 100.0, 2),
@@ -94,6 +120,7 @@ def calculate_metrics(results: List[ScenarioExecutionResult]) -> BenchmarkMetric
         human_intervention_rate=round(human_count / denom * 100.0, 2),
         approval_required_rate=round(human_count / denom * 100.0, 2),
         manual_decision_required_rate=round(manual_decision_count / denom * 100.0, 2),
+        safe_operator_deferral_rate=round(deferral_count / denom * 100.0, 2),
         replan_rate=round(replan_count / denom * 100.0, 2),
         rollback_success_rate=round(rollback_rate * 100.0, 2),
         timeout_rate=round(timeout_count / denom * 100.0, 2),
@@ -101,7 +128,7 @@ def calculate_metrics(results: List[ScenarioExecutionResult]) -> BenchmarkMetric
         environment_invalid_count=env_invalid_count,
         executable_scenarios=executable_count,
         average_tool_calls=round(avg_tools, 2),
-        median_tool_calls=round(median(tool_calls), 2),
+        median_tool_calls=round(median([float(x) for x in tool_calls]), 2),
         average_completion_time_seconds=round(avg_duration, 2),
         median_completion_time_seconds=round(median(durations), 2),
         phase_latencies={
