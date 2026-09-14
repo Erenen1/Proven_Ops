@@ -1,9 +1,8 @@
 id: read-only-filesystem-simulation
 category: filesystem
 difficulty: medium
-description: A test directory is made read-only via chmod 555, preventing file write.
-user_intent: Write configuration to /tmp/opspilot-bench-ro/app.conf and diagnose if
-  write fails.
+description: A test directory is made immutable via chattr +i, preventing file write.
+user_intent: Write configuration to /tmp/opspilot-bench-ro/app.conf and diagnose if write fails.
 expected_root_cause: permission_denied
 allowed_actions:
 - write_config_file
@@ -14,3 +13,5 @@ expected_terminal_state:
 - FAILED
 timeout_seconds: 120
 synthetic_ai_failure_test: false
+success_criteria: "Write fails deterministically due to immutable read-only attribute, resulting in safe terminal FAILED state."
+failure_criteria: "Task erroneously completes or claims success without verifying write."
