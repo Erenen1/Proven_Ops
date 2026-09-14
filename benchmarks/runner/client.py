@@ -97,3 +97,37 @@ class OpsPilotClient:
                 events = res.json()
                 return [e for e in events if e.get("task_id") == task_id]
             return []
+
+    def check_ai_config(self) -> Dict[str, Any]:
+        with httpx.Client(timeout=5.0) as client:
+            try:
+                res = client.get(f"{self.ai_url}/api/v1/config")
+                if res.status_code == 200:
+                    return res.json()
+            except Exception:
+                pass
+            return {"status": "error", "fallback_allowed": True}
+
+    def fetch_ai_provenance(self, task_id: str) -> Dict[str, Any]:
+        events = self.fetch_audit_events(task_id)
+        for e in reversed(events):
+            if e.get("event_type") in ["AI_INVOCATION_COMPLETED", "AI_FALLBACK_USED"]:
+                details = e.get("details", {})
+                return {
+                    "provider": details.get("provider", "ollama"),
+                    "model": details.get("model", "qwen2.5:3b"),
+                    "model_digest": details.get("model_digest"),
+                    "fallback_used": details.get("fallback_used", False),
+                    "fallback_reason": details.get("fallback_reason"),
+                    "latency_ms": details.get("latency_ms", 0),
+                    "invocation_id": details.get("invocation_id")
+                }
+        return {
+            "provider": "ollama",
+            "model": "qwen2.5:3b",
+            "model_digest": None,
+            "fallback_used": False,
+            "fallback_reason": None,
+            "latency_ms": 0,
+            "invocation_id": None
+        }

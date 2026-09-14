@@ -20,6 +20,7 @@ def main():
 
     parser.add_argument("--control-plane", type=str, default=default_cp, help="Control Plane HTTP URL")
     parser.add_argument("--ai-service", type=str, default=default_ai, help="AI Service HTTP URL")
+    parser.add_argument("--official", action="store_true", help="Enforce official benchmark rules (no fallback, provenance verification)")
 
     args = parser.parse_args()
 
@@ -30,7 +31,8 @@ def main():
         scenarios_dir=args.scenarios_dir,
         results_dir=args.results_dir,
         control_plane_url=args.control_plane,
-        ai_service_url=args.ai_service
+        ai_service_url=args.ai_service,
+        official=args.official
     )
 
     try:
