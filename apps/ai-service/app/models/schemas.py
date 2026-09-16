@@ -42,6 +42,8 @@ class PlanRequest(BaseModel):
 
 class ProvenanceMetadata(BaseModel):
     invocation_id: str
+    trace_id: Optional[str] = None
+    span_id: Optional[str] = None
     task_id: Optional[str] = None
     scenario_id: Optional[str] = None
     purpose: str = "PLAN"

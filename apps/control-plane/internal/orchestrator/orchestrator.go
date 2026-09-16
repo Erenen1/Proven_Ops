@@ -18,6 +18,7 @@ import (
 	"opspilot/control-plane/internal/models"
 	"opspilot/control-plane/internal/policy"
 	"opspilot/control-plane/internal/statemachine"
+	"opspilot/control-plane/internal/telemetry"
 	"opspilot/control-plane/internal/verification"
 	opspilotv1 "opspilot/proto/v1"
 )
@@ -172,6 +173,7 @@ func (o *Orchestrator) StartTask(ctx context.Context, taskID string) error {
 		step := &models.TaskStep{
 			ID:                   uuid.New().String(),
 			TaskID:               task.ID,
+			TraceID:              task.TraceID,
 			StepOrder:            idx + 1,
 			Action:               s.Action,
 			Arguments:            s.Arguments,
@@ -393,7 +395,8 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 				VerificationStrategyJson: string(stratJSON),
 			}
 
-			stepRes, stepErr = o.grpcServer.DispatchStep(ctx, targetAgentID, cmd)
+			dispatchCtx := telemetry.InjectGRPC(ctx)
+			stepRes, stepErr = o.grpcServer.DispatchStep(dispatchCtx, targetAgentID, cmd)
 			if stepErr == nil && stepRes != nil && stepRes.Success {
 				break // execution succeeded!
 			}
@@ -1207,6 +1210,7 @@ func (o *Orchestrator) callAIPlanning(ctx context.Context, path string, payload 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	telemetry.InjectHTTP(ctx, req.Header)
 
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -1224,6 +1228,10 @@ func (o *Orchestrator) callAIPlanning(ctx context.Context, path string, payload 
 	}
 
 	if plan.Provenance != nil {
+		tc := telemetry.FromContext(ctx)
+		if plan.Provenance.TraceID == "" {
+			plan.Provenance.TraceID = tc.TraceID
+		}
 		if taskID, ok := payload["task_id"].(string); ok && plan.Provenance.TaskID == "" {
 			plan.Provenance.TaskID = taskID
 		}

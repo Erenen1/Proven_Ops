@@ -52,6 +52,7 @@ export interface VerificationStrategy {
 export interface TaskStep {
   id: string;
   task_id: string;
+  trace_id?: string;
   step_order: number;
   action: string;
   arguments: Record<string, any>;
@@ -104,6 +105,7 @@ export interface AIPlanData {
 
 export interface Task {
   id: string;
+  trace_id?: string;
   title: string;
   prompt: string;
   status: TaskStatus;

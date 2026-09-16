@@ -22,6 +22,7 @@ import (
 	"opspilot/control-plane/internal/policy"
 	"opspilot/control-plane/internal/runbooks"
 	"opspilot/control-plane/internal/statemachine"
+	"opspilot/control-plane/internal/telemetry"
 )
 
 type Handler struct {
@@ -52,6 +53,7 @@ func NewRouter(
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	r.Use(telemetry.HTTPMiddleware)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -227,8 +229,10 @@ func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	tc := telemetry.FromContext(r.Context())
 	task := &models.Task{
 		ID:             uuid.New().String(),
+		TraceID:        tc.TraceID,
 		Title:          title,
 		Prompt:         req.Prompt,
 		Status:         models.TaskStatusCreated,
@@ -438,8 +442,10 @@ func (h *Handler) handleExecuteRunbook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	tc := telemetry.FromContext(r.Context())
 	task := &models.Task{
 		ID:             uuid.New().String(),
+		TraceID:        tc.TraceID,
 		Title:          fmt.Sprintf("Runbook: %s", plan.Goal),
 		Prompt:         fmt.Sprintf("Execute runbook %s (%s)", rb.Slug, rb.Title),
 		Status:         models.TaskStatusCreated,

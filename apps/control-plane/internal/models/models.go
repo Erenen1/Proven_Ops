@@ -108,6 +108,7 @@ type AgentMetrics struct {
 
 type Task struct {
 	ID               string             `json:"id"`
+	TraceID          string             `json:"trace_id,omitempty"`
 	Title            string             `json:"title"`
 	Prompt           string             `json:"prompt"`
 	Status           TaskStatus         `json:"status"`
@@ -170,6 +171,7 @@ type FleetRolloutProgress struct {
 
 type AIProvenanceData struct {
 	InvocationID   string    `json:"invocation_id"`
+	TraceID        string    `json:"trace_id,omitempty"`
 	TaskID         string    `json:"task_id,omitempty"`
 	ScenarioID     string    `json:"scenario_id,omitempty"`
 	Purpose        string    `json:"purpose"`
@@ -211,6 +213,7 @@ type VerificationStrategy struct {
 type TaskStep struct {
 	ID                   string                `json:"id"`
 	TaskID               string                `json:"task_id"`
+	TraceID              string                `json:"trace_id,omitempty"`
 	StepOrder            int                   `json:"step_order"`
 	Action               string                `json:"action"`
 	ExecutionID          string                `json:"execution_id,omitempty"`
@@ -282,6 +285,7 @@ type VerificationResult struct {
 
 type AuditEvent struct {
 	ID        int64          `json:"id"`
+	TraceID   string         `json:"trace_id,omitempty"`
 	UserID    string         `json:"user_id,omitempty"`
 	Username  string         `json:"username,omitempty"`
 	AgentID   string         `json:"agent_id,omitempty"`

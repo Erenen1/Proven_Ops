@@ -12,7 +12,9 @@ import {
   ShieldAlert,
   BookmarkPlus,
   Radio,
-  Trash2
+  Trash2,
+  Network,
+  Copy
 } from 'lucide-react';
 
 interface TaskDetailModalProps {
@@ -238,7 +240,22 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task: initialT
                   {task.status}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-mono mt-0.5">ID: {task.id}</p>
+              <div className="flex items-center space-x-3 text-xs text-slate-400 font-mono mt-0.5">
+                <span>ID: {task.id}</span>
+                {task.trace_id && (
+                  <span className="flex items-center space-x-1 px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30 text-[10px]">
+                    <Network className="w-2.5 h-2.5 text-purple-400" />
+                    <span>Trace: {task.trace_id.slice(0, 8)}...{task.trace_id.slice(-6)}</span>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(task.trace_id!)}
+                      title="Copy W3C Trace ID"
+                      className="hover:text-white transition-colors"
+                    >
+                      <Copy className="w-2.5 h-2.5 ml-0.5" />
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

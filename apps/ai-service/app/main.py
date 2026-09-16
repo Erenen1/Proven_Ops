@@ -1,6 +1,6 @@
 import logging
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .models.schemas import (
@@ -37,6 +37,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def tracing_middleware(request: Request, call_next):
+    traceparent = request.headers.get("traceparent")
+    trace_id = None
+    span_id = None
+    if traceparent and traceparent.startswith("00-"):
+        parts = traceparent.split("-")
+        if len(parts) >= 4:
+            trace_id = parts[1]
+            span_id = parts[2]
+    elif request.headers.get("x-trace-id"):
+        trace_id = request.headers.get("x-trace-id")
+
+    request.state.trace_id = trace_id
+    request.state.span_id = span_id
+
+    response = await call_next(request)
+    if traceparent:
+        response.headers["traceparent"] = traceparent
+    if trace_id:
+        response.headers["X-Trace-ID"] = trace_id
+    return response
+
 provider = OllamaProvider(
     base_url=settings.OLLAMA_BASE_URL,
     model_name=settings.DEFAULT_LLM_MODEL,
@@ -65,12 +88,14 @@ async def get_config():
     }
 
 @app.post("/api/v1/plan", response_model=PlanResponse)
-async def create_plan(req: PlanRequest):
+async def create_plan(req: PlanRequest, request: Request):
     logger.info(f"Generating plan for task={req.task_id}, intent='{req.intent}'")
     user_prompt = build_planning_prompt(req)
+    trace_id = getattr(request.state, "trace_id", None)
+    span_id = getattr(request.state, "span_id", None)
     try:
         raw_json, prov = await provider.generate_json_with_provenance(
-            SYSTEM_PROMPT, user_prompt, purpose="PLAN", task_id=req.task_id
+            SYSTEM_PROMPT, user_prompt, purpose="PLAN", task_id=req.task_id, trace_id=trace_id, span_id=span_id
         )
         plan = PlanResponse.model_validate(raw_json)
         plan.provenance = prov
@@ -80,12 +105,14 @@ async def create_plan(req: PlanRequest):
         raise HTTPException(status_code=500, detail=f"Planning generation error: {str(e)}")
 
 @app.post("/api/v1/replan", response_model=PlanResponse)
-async def replan_task(req: ReplanRequest):
+async def replan_task(req: ReplanRequest, request: Request):
     logger.info(f"Replanning task={req.task_id}, failed_step={req.failed_step_id}")
     user_prompt = build_replanning_prompt(req)
+    trace_id = getattr(request.state, "trace_id", None)
+    span_id = getattr(request.state, "span_id", None)
     try:
         raw_json, prov = await provider.generate_json_with_provenance(
-            SYSTEM_PROMPT, user_prompt, purpose="REPLAN", task_id=req.task_id
+            SYSTEM_PROMPT, user_prompt, purpose="REPLAN", task_id=req.task_id, trace_id=trace_id, span_id=span_id
         )
         plan = PlanResponse.model_validate(raw_json)
         plan.provenance = prov
@@ -95,12 +122,14 @@ async def replan_task(req: ReplanRequest):
         raise HTTPException(status_code=500, detail=f"Replanning generation error: {str(e)}")
 
 @app.post("/api/v1/diagnose", response_model=DiagnosisResponse)
-async def diagnose_issue(req: DiagnosisRequest):
+async def diagnose_issue(req: DiagnosisRequest, request: Request):
     logger.info(f"Diagnosing issue for task={req.task_id}, symptom='{req.symptom}'")
     user_prompt = build_diagnosis_prompt(req)
+    trace_id = getattr(request.state, "trace_id", None)
+    span_id = getattr(request.state, "span_id", None)
     try:
         raw_json, prov = await provider.generate_json_with_provenance(
-            SYSTEM_PROMPT, user_prompt, purpose="DIAGNOSIS", task_id=req.task_id
+            SYSTEM_PROMPT, user_prompt, purpose="DIAGNOSIS", task_id=req.task_id, trace_id=trace_id, span_id=span_id
         )
         diagnosis = DiagnosisResponse.model_validate(raw_json)
         diagnosis.provenance = prov

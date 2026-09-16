@@ -42,7 +42,9 @@ class OllamaProvider(LLMProvider):
         user_prompt: str,
         purpose: str = "PLAN",
         task_id: Optional[str] = None,
-        scenario_id: Optional[str] = None
+        scenario_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        span_id: Optional[str] = None
     ) -> Tuple[Dict[str, Any], ProvenanceMetadata]:
         invocation_id = str(uuid.uuid4())
         start_time = time.time()
@@ -72,6 +74,8 @@ class OllamaProvider(LLMProvider):
                     latency_ms = int((time.time() - start_time) * 1000)
                     prov = ProvenanceMetadata(
                         invocation_id=invocation_id,
+                        trace_id=trace_id,
+                        span_id=span_id,
                         task_id=task_id,
                         scenario_id=scenario_id,
                         purpose=purpose,
@@ -95,6 +99,8 @@ class OllamaProvider(LLMProvider):
         fallback_data = self._heuristic_fallback(user_prompt, purpose=purpose)
         prov = ProvenanceMetadata(
             invocation_id=invocation_id,
+            trace_id=trace_id,
+            span_id=span_id,
             task_id=task_id,
             scenario_id=scenario_id,
             purpose=purpose,
