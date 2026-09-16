@@ -3,9 +3,31 @@
 Last Updated: 2026-09-16
 
 ## Current Focus
-Milestone 4 (Enterprise SRE Runbooks, Parameter Templating, AI Diagnosis Grounding & Live Fleet UI) completed and deterministically verified with Docker.
+All 4 Enterprise Roadmap Features (Multi-Host Fleet Canary Rollouts, Real-Time Telemetry & Live Streaming Terminal, OpenTelemetry Distributed Tracing, Automated PKI & mTLS Lifecycle) fully implemented, deterministically tested, and verified across all services.
 
 ## Completed
+- **Enterprise Roadmap Features (Full Implementation)**:
+  - **1. Multi-Host Fleet Rollout Engine (`apps/control-plane/internal/fleet`)**:
+    - Canary and rolling rollout strategies (`ALL_AT_ONCE`, `CANARY`, `ROLLING`) with batch partitioning.
+    - Automated blast-radius bounding: `MaxFailures` threshold halts rollout before widespread fleet impact.
+    - Real-time per-host state tracking (`FleetRolloutProgress`, `HostExecutionState`) broadcast via SSE.
+    - Integrated with Task creation and Runbook execution APIs (`handleCreateTask`, `handleExecuteRunbook`).
+  - **2. Real-Time Node Telemetry & Streaming Terminal (`agent`, `control-plane`, `dashboard`)**:
+    - Host resource collector (`discovery/collector.go`): live CPU % via `/proc/stat` delta, RAM bytes/%, Disk % via `df`, 1m load average.
+    - Live command output streaming via `ExecuteWithStream` and `streamingWriter` over bidirectional gRPC stream.
+    - Control Plane `NODE_TELEMETRY` SSE publishing on heartbeat; `GET /api/v1/agents/{id}/telemetry` endpoint.
+    - Dashboard `FleetView`: animated color-coded resource progress bars (CPU, RAM, Disk, Load).
+    - Dashboard `TaskDetailModal`: interactive live terminal console with real-time SSE chunks, stream filtering (stdout/stderr/all), and auto-scroll.
+  - **3. OpenTelemetry Distributed Tracing (`control-plane/internal/telemetry`, `ai-service`, `dashboard`)**:
+    - W3C TraceContext propagation (`traceparent`, `X-Trace-ID`) across HTTP, gRPC metadata, and AI Service HTTP requests.
+    - Automatic `HTTPMiddleware` in Control Plane extracting or minting W3C trace contexts.
+    - AI Service tracing middleware extracting `traceparent` and stamping `trace_id` on invocation provenance (`ai_invocations`).
+    - Dashboard `TaskDetailModal` distributed trace ID badge with one-click copy for APM deep linking.
+  - **4. Automated PKI & mTLS Certificate Lifecycle (`apps/control-plane/internal/pki`, `agent`)**:
+    - Dynamic X.509 client certificate issuance (`IssueAgentCertificate`), validation (`ValidateCertificate`), and renewal (`RenewAgentCertificate`).
+    - gRPC `Register` and REST `/api/v1/pki/enroll` endpoints for dynamic certificate issuance from bootstrap tokens.
+    - Agent auto-enrollment: bootstraps missing local mTLS certificates on first run, saves securely with `0600` permissions.
+    - REST endpoint `/api/v1/pki/renew` for seamless agent certificate rotation without downtime.
 - **Milestone 4 — Enterprise SRE Runbooks, Parameter Templating & Diagnosis Grounding**:
   - **Deterministic SRE Diagnosis Grounding (`apps/ai-service`)**: Fast, regex-anchored evidence extraction across all 16 canonical root causes; grounds model diagnostic predictions, reconciles evidence gaps, and enriches diagnostic outputs.
   - **Purpose-Aware Heuristic Fallback**: Full fallback coverage for PLAN, REPLAN, and DIAGNOSIS requests, strictly honoring schema validation.

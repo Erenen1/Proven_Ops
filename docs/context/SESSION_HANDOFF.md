@@ -1,21 +1,40 @@
 # Session Handoff
 
-Last Updated: 2026-09-16 12:25
+Last Updated: 2026-09-16 13:00
 
 ## Status
-COMPLETE (MILESTONE 4: SRE RUNBOOK ENGINE, PARAMETER TEMPLATING, DIAGNOSIS GROUNDING & FLEET UI VERIFIED IN DOCKER)
+COMPLETE (ALL 4 ADVANCED ROADMAP FEATURES IMPLEMENTED, TESTED, AND VERIFIED IN DOCKER)
 
 ## Session Goal
-Deliver 3-phase autonomous loop engineering upgrade for OpsPilot:
-1. **Phase 1 (AI Diagnostics & Grounding)**: Deterministic SRE evidence extraction across 16 canonical root causes and purpose-aware heuristic fallback for PLAN, REPLAN, and DIAGNOSIS.
-2. **Phase 2 (Enterprise SRE Runbook Engine)**: Parameter templating engine (`{{param}}`), pre-flight dry-run policy simulation, PostgreSQL versioned persistence, and REST endpoints.
-3. **Phase 3 (Fleet Runbooks UI & Container Validation)**: Interactive Runbook drawer in React/Vite dashboard, live dry-run simulation feedback, and full Docker container verification.
+Deliver full autonomous implementation of the 4 enterprise roadmap features for OpsPilot:
+1. **Feature 1: Multi-Host Fleet Orchestration**: Canary and rolling rollout strategy engine with automated blast-radius halting.
+2. **Feature 2: Real-Time Node Telemetry & Streaming Terminal**: Dynamic CPU, RAM, Disk, and Load metrics with live stdout/stderr chunk streaming via SSE and gRPC.
+3. **Feature 3: OpenTelemetry Distributed Tracing**: End-to-end W3C TraceContext propagation across Control Plane HTTP router, Agent gRPC, AI Service, and Dashboard.
+4. **Feature 4: Automated PKI & mTLS Certificate Lifecycle**: Dynamic X.509 client issuance, bootstrap token exchange, and certificate renewal/rotation without downtime.
 
 ## What Was Done
-1. **Control Plane AI Provenance Persistence (`ai_invocations`)**:
-   - Added migration `db/migrations/005_ai_invocations.sql` creating `ai_invocations` table with indexes on `task_id` and `created_at`.
-   - Updated `internal/models/models.go`, `internal/database/db.go`, and `internal/database/postgres.go` to save and list invocations.
-   - Orchestrator records provenance for all planning calls and emits `AI_INVOCATION_COMPLETED` audit events.
+1. **Feature 1 — Multi-Host Fleet Canary Rollout Engine (`internal/fleet`)**:
+   - Implemented `ComputeBatches` for `ALL_AT_ONCE`, `CANARY` (1 canary host first, wait for verification, then remainder), and `ROLLING` (batch size chunks).
+   - Implemented `ExecuteRollout` with parallel host execution, per-host state tracking (`FleetRolloutProgress`), and `MaxFailures` blast-radius halting.
+   - Connected `RolloutConfig` to Task creation and Runbook execution API endpoints.
+   - Unit tests: `TestComputeBatches`, `TestExecuteRolloutSuccess`, `TestExecuteRolloutCanaryHaltOnFailure` (100% PASS).
+2. **Feature 2 — Real-Time Node Telemetry & Streaming Terminal (`agent`, `control-plane`, `dashboard`)**:
+   - Host metrics collector (`discovery/collector.go`): live CPU % delta from `/proc/stat`, RAM bytes/%, Disk % via `df`, 1m load average.
+   - Live command streaming via `ExecuteWithStream` and `streamingWriter` over bidirectional gRPC stream.
+   - Control Plane `NODE_TELEMETRY` SSE publishing on heartbeat; `GET /api/v1/agents/{id}/telemetry` endpoint.
+   - Dashboard `FleetView`: animated color-coded resource progress bars (CPU, RAM, Disk, Load).
+   - Dashboard `TaskDetailModal`: interactive live terminal console with real-time SSE chunks, stream filtering (stdout/stderr/all), and auto-scroll.
+3. **Feature 3 — OpenTelemetry Distributed Tracing (`internal/telemetry`, `ai-service`, `dashboard`)**:
+   - W3C TraceContext propagation (`traceparent`, `X-Trace-ID`) across HTTP, gRPC metadata, and AI Service HTTP requests.
+   - Automatic `HTTPMiddleware` in Control Plane extracting or minting W3C trace contexts.
+   - AI Service tracing middleware extracting `traceparent` and stamping `trace_id` on invocation provenance (`ai_invocations`).
+   - Dashboard `TaskDetailModal` distributed trace ID badge with one-click copy for APM deep linking.
+4. **Feature 4 — Automated PKI & mTLS Certificate Lifecycle (`internal/pki`, `agent`)**:
+   - Dynamic X.509 client certificate issuance (`IssueAgentCertificate`), validation (`ValidateCertificate`), and renewal (`RenewAgentCertificate`).
+   - gRPC `Register` and REST `/api/v1/pki/enroll` endpoints for dynamic certificate issuance from bootstrap tokens.
+   - Agent auto-enrollment: bootstraps missing local mTLS certificates on first run, saves securely with `0600` permissions.
+   - REST endpoint `/api/v1/pki/renew` for seamless agent certificate rotation without downtime.
+   - Unit tests: `TestCertificateLifecycle_IssueValidateRenew`, `TestMutualTLS_FullLifecycle`, `TestPKIEnroll_Success`, `TestPKIRenew_Success`, `TestPKIGetCA_Success` (100% PASS).
 2. **AI Service Provider Abstraction & Model Digest**:
    - Added `ProvenanceMetadata` to `PlanResponse` and `DiagnosisResponse` in `apps/ai-service/app/models/schemas.py`.
    - Implemented `get_model_digest()` in `OllamaProvider` querying `/api/tags` and measuring precise latency.
