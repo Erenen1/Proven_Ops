@@ -14,6 +14,7 @@ import (
 	"opspilot/control-plane/internal/database"
 	"opspilot/control-plane/internal/events"
 	"opspilot/control-plane/internal/models"
+	"opspilot/control-plane/internal/pki"
 	opspilotv1 "opspilot/proto/v1"
 )
 
@@ -22,6 +23,7 @@ type Server struct {
 	store          database.Store
 	hub            *events.Hub
 	bootstrapToken string
+	ca             *pki.CertificateAuthority
 	mu             sync.RWMutex
 	activeStreams  map[string]opspilotv1.AgentService_ConnectStreamServer
 	stepResultChans map[string]chan *opspilotv1.StepResult
@@ -35,6 +37,12 @@ func NewServer(store database.Store, hub *events.Hub, bootstrapToken string) *Se
 		activeStreams:   make(map[string]opspilotv1.AgentService_ConnectStreamServer),
 		stepResultChans: make(map[string]chan *opspilotv1.StepResult),
 	}
+}
+
+func (s *Server) SetCA(ca *pki.CertificateAuthority) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ca = ca
 }
 
 func (s *Server) Register(ctx context.Context, req *opspilotv1.RegisterRequest) (*opspilotv1.RegisterResponse, error) {
@@ -82,12 +90,26 @@ func (s *Server) Register(ctx context.Context, req *opspilotv1.RegisterRequest) 
 		"distribution": req.Distribution,
 	})
 
-	return &opspilotv1.RegisterResponse{
+	resp := &opspilotv1.RegisterResponse{
 		AgentId:              agentID,
 		Approved:             true,
 		Message:              "Registration approved",
 		HeartbeatIntervalSec: 5,
-	}, nil
+	}
+
+	s.mu.RLock()
+	ca := s.ca
+	s.mu.RUnlock()
+
+	if ca != nil {
+		if keyPair, err := pki.IssueAgentCertificate(ca, agentID, req.Hostname, 90*24*time.Hour); err == nil {
+			resp.ClientCertPem = string(keyPair.CertPEM)
+			resp.ClientKeyPem = string(keyPair.KeyPEM)
+			resp.CaCertPem = string(ca.CertPEM)
+		}
+	}
+
+	return resp, nil
 }
 
 func (s *Server) SendHeartbeat(ctx context.Context, req *opspilotv1.HeartbeatRequest) (*opspilotv1.HeartbeatResponse, error) {

@@ -19,6 +19,7 @@ import (
 	"opspilot/control-plane/internal/events"
 	"opspilot/control-plane/internal/models"
 	"opspilot/control-plane/internal/orchestrator"
+	"opspilot/control-plane/internal/pki"
 	"opspilot/control-plane/internal/policy"
 	"opspilot/control-plane/internal/runbooks"
 	"opspilot/control-plane/internal/statemachine"
@@ -26,12 +27,22 @@ import (
 )
 
 type Handler struct {
-	store         database.Store
-	authService   *auth.Service
-	orchestrator  *orchestrator.Orchestrator
-	hub           *events.Hub
-	machine       *statemachine.Machine
-	runbookEngine *runbooks.Engine
+	store          database.Store
+	authService    *auth.Service
+	orchestrator   *orchestrator.Orchestrator
+	hub            *events.Hub
+	machine        *statemachine.Machine
+	runbookEngine  *runbooks.Engine
+	ca             *pki.CertificateAuthority
+	bootstrapToken string
+}
+
+func (h *Handler) SetCA(ca *pki.CertificateAuthority) {
+	h.ca = ca
+}
+
+func (h *Handler) SetBootstrapToken(token string) {
+	h.bootstrapToken = token
 }
 
 func NewRouter(
@@ -41,14 +52,31 @@ func NewRouter(
 	hub *events.Hub,
 	machine *statemachine.Machine,
 ) http.Handler {
+	return NewRouterWithPKI(store, authService, orchestrator, hub, machine, nil, "opspilot-default-bootstrap-token-2026")
+}
+
+func NewRouterWithPKI(
+	store database.Store,
+	authService *auth.Service,
+	orchestrator *orchestrator.Orchestrator,
+	hub *events.Hub,
+	machine *statemachine.Machine,
+	ca *pki.CertificateAuthority,
+	bootstrapToken string,
+) http.Handler {
 	pe := policy.NewEngine()
+	if bootstrapToken == "" {
+		bootstrapToken = "opspilot-default-bootstrap-token-2026"
+	}
 	h := &Handler{
-		store:         store,
-		authService:   authService,
-		orchestrator:  orchestrator,
-		hub:           hub,
-		machine:       machine,
-		runbookEngine: runbooks.NewEngine(pe),
+		store:          store,
+		authService:    authService,
+		orchestrator:   orchestrator,
+		hub:            hub,
+		machine:        machine,
+		runbookEngine:  runbooks.NewEngine(pe),
+		ca:             ca,
+		bootstrapToken: bootstrapToken,
 	}
 
 	r := chi.NewRouter()
@@ -94,6 +122,11 @@ func NewRouter(
 
 		// Audit
 		r.Get("/audit", h.handleListAudit)
+
+		// PKI & Certificate Lifecycle
+		r.Post("/pki/enroll", h.handlePKIEnroll)
+		r.Post("/pki/renew", h.handlePKIRenew)
+		r.Get("/pki/ca", h.handlePKIGetCA)
 	})
 
 	return r
@@ -565,6 +598,108 @@ func (h *Handler) handleListAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, events)
+}
+
+func (h *Handler) getOrCreateCA() (*pki.CertificateAuthority, error) {
+	if h.ca != nil {
+		return h.ca, nil
+	}
+	ca, err := pki.GenerateCA("OpsPilot Enterprise Root CA")
+	if err != nil {
+		return nil, err
+	}
+	h.ca = ca
+	return ca, nil
+}
+
+func (h *Handler) handlePKIEnroll(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		BootstrapToken string `json:"bootstrap_token"`
+		AgentID        string `json:"agent_id"`
+		Hostname       string `json:"hostname"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+
+	if req.BootstrapToken != h.bootstrapToken {
+		jsonError(w, http.StatusUnauthorized, "invalid bootstrap token")
+		return
+	}
+
+	agentID := req.AgentID
+	if agentID == "" {
+		if req.Hostname != "" {
+			agentID = fmt.Sprintf("agent-%s", req.Hostname)
+		} else {
+			agentID = fmt.Sprintf("agent-%s", uuid.New().String()[:8])
+		}
+	}
+
+	ca, err := h.getOrCreateCA()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, fmt.Sprintf("CA error: %v", err))
+		return
+	}
+
+	keyPair, err := pki.IssueAgentCertificate(ca, agentID, req.Hostname, 90*24*time.Hour)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, fmt.Sprintf("failed to issue certificate: %v", err))
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"approved":        true,
+		"agent_id":        agentID,
+		"client_cert_pem": string(keyPair.CertPEM),
+		"client_key_pem":  string(keyPair.KeyPEM),
+		"ca_cert_pem":     string(ca.CertPEM),
+		"expires_at":      keyPair.Cert.NotAfter.Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) handlePKIRenew(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ClientCertPEM string `json:"client_cert_pem"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+
+	ca, err := h.getOrCreateCA()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, fmt.Sprintf("CA error: %v", err))
+		return
+	}
+
+	renewedPair, err := pki.RenewAgentCertificate(ca, []byte(req.ClientCertPEM), 90*24*time.Hour)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, fmt.Sprintf("certificate renewal failed: %v", err))
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"approved":        true,
+		"agent_id":        renewedPair.Cert.Subject.CommonName,
+		"client_cert_pem": string(renewedPair.CertPEM),
+		"client_key_pem":  string(renewedPair.KeyPEM),
+		"ca_cert_pem":     string(ca.CertPEM),
+		"expires_at":      renewedPair.Cert.NotAfter.Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) handlePKIGetCA(w http.ResponseWriter, r *http.Request) {
+	ca, err := h.getOrCreateCA()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, fmt.Sprintf("CA error: %v", err))
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"ca_cert_pem": string(ca.CertPEM),
+	})
 }
 
 func jsonResponse(w http.ResponseWriter, code int, data any) {

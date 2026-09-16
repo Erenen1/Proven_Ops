@@ -228,3 +228,132 @@ func ClientTLSConfig(caPEM, clientCertPEM, clientKeyPEM []byte, serverName strin
 		MinVersion:   tls.VersionTLS13,
 	}, nil
 }
+
+// LoadCAFromPEM loads a CertificateAuthority from cert and key PEM bytes
+func LoadCAFromPEM(certPEM, keyPEM []byte) (*CertificateAuthority, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("failed to decode CA certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+	}
+
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return nil, fmt.Errorf("failed to decode CA private key PEM")
+	}
+	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		k, err2 := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to parse EC private key: %w", err)
+		}
+		var ok bool
+		key, ok = k.(*ecdsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("CA private key is not ECDSA")
+		}
+	}
+
+	return &CertificateAuthority{
+		Cert:    cert,
+		CertPEM: certPEM,
+		Key:     key,
+		KeyPEM:  keyPEM,
+	}, nil
+}
+
+// IssueAgentCertificate creates a signed client certificate for an agent with specified validity duration
+func IssueAgentCertificate(ca *CertificateAuthority, agentID, hostname string, duration time.Duration) (*KeyPair, error) {
+	if duration <= 0 {
+		duration = 90 * 24 * time.Hour
+	}
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate client key: %w", err)
+	}
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"OpsPilot Fleet Agent"},
+			CommonName:   agentID,
+		},
+		NotBefore:   time.Now().Add(-5 * time.Minute),
+		NotAfter:    time.Now().Add(duration),
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	if hostname != "" {
+		template.DNSNames = append(template.DNSNames, hostname)
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, ca.Cert, &priv.PublicKey, ca.Key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client certificate: %w", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyBytes, _ := x509.MarshalECPrivateKey(priv)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	parsedCert, _ := x509.ParseCertificate(derBytes)
+
+	return &KeyPair{
+		Cert:    parsedCert,
+		CertPEM: certPEM,
+		Key:     priv,
+		KeyPEM:  keyPEM,
+	}, nil
+}
+
+// ValidateCertificate verifies that the certificate was signed by the CA and is currently valid
+func ValidateCertificate(certPEM, caPEM []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("failed to decode certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to parse CA certificate PEM")
+	}
+
+	opts := x509.VerifyOptions{
+		Roots:     caPool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageAny},
+	}
+	if _, err := cert.Verify(opts); err != nil {
+		return nil, fmt.Errorf("certificate verification failed: %w", err)
+	}
+
+	return cert, nil
+}
+
+// RenewAgentCertificate validates the existing certificate and issues a new certificate for the same agent
+func RenewAgentCertificate(ca *CertificateAuthority, existingCertPEM []byte, duration time.Duration) (*KeyPair, error) {
+	cert, err := ValidateCertificate(existingCertPEM, ca.CertPEM)
+	if err != nil {
+		return nil, fmt.Errorf("cannot renew invalid certificate: %w", err)
+	}
+
+	hostname := ""
+	if len(cert.DNSNames) > 0 {
+		hostname = cert.DNSNames[0]
+	}
+
+	return IssueAgentCertificate(ca, cert.Subject.CommonName, hostname, duration)
+}
+

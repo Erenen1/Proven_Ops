@@ -1,13 +1,17 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,6 +47,13 @@ func (c *AgentClient) Start(ctx context.Context) error {
 
 	var dialCreds credentials.TransportCredentials
 	if c.cfg.TLSEnabled {
+		if _, err := os.Stat(c.cfg.TLSClientCert); os.IsNotExist(err) {
+			log.Println("[OpsPilot Agent] Client certificate not found. Initiating automated PKI bootstrap enrollment...")
+			if err := c.enrollCertificates(ctx); err != nil {
+				return fmt.Errorf("automated PKI bootstrap enrollment failed: %w", err)
+			}
+		}
+
 		log.Println("[OpsPilot Agent] mTLS enabled: Loading certificates...")
 		clientCert, err := tls.LoadX509KeyPair(c.cfg.TLSClientCert, c.cfg.TLSClientKey)
 		if err != nil {
@@ -260,4 +271,69 @@ func (c *AgentClient) handleExecuteStep(
 		},
 	})
 	log.Printf("[OpsPilot Agent] Finished step %s: exit_code=%d, success=%v", cmd.StepId, res.ExitCode, res.Success)
+}
+
+func (c *AgentClient) enrollCertificates(ctx context.Context) error {
+	host := c.cfg.ControlPlaneAddr
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	enrollURL := fmt.Sprintf("http://%s:8080/api/v1/pki/enroll", host)
+
+	payload := map[string]string{
+		"bootstrap_token": c.cfg.BootstrapToken,
+		"hostname":        c.cfg.Hostname,
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", enrollURL, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("enrollment HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("enrollment rejected by control plane: HTTP %d", resp.StatusCode)
+	}
+
+	var res struct {
+		Approved      bool   `json:"approved"`
+		AgentID       string `json:"agent_id"`
+		ClientCertPEM string `json:"client_cert_pem"`
+		ClientKeyPEM  string `json:"client_key_pem"`
+		CACertPEM     string `json:"ca_cert_pem"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return fmt.Errorf("failed to decode enrollment response: %w", err)
+	}
+	if !res.Approved {
+		return fmt.Errorf("enrollment was not approved")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(c.cfg.TLSClientCert), 0750); err != nil {
+		return err
+	}
+	if err := os.WriteFile(c.cfg.TLSClientCert, []byte(res.ClientCertPEM), 0644); err != nil {
+		return fmt.Errorf("failed to write client cert: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(c.cfg.TLSClientKey), 0700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(c.cfg.TLSClientKey, []byte(res.ClientKeyPEM), 0600); err != nil {
+		return fmt.Errorf("failed to write client key: %w", err)
+	}
+	if c.cfg.TLSCACert != "" {
+		_ = os.MkdirAll(filepath.Dir(c.cfg.TLSCACert), 0750)
+		_ = os.WriteFile(c.cfg.TLSCACert, []byte(res.CACertPEM), 0644)
+	}
+
+	log.Printf("[OpsPilot Agent] Automated PKI enrollment complete! Cert saved to %s", c.cfg.TLSClientCert)
+	return nil
 }
