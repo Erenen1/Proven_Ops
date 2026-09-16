@@ -1,19 +1,15 @@
 # Session Handoff
 
-Last Updated: 2026-09-14 15:40
+Last Updated: 2026-09-16 12:25
 
 ## Status
-COMPLETE (MILESTONE 3.2: AI PROVIDER PROVENANCE, OUTCOME SEMANTICS & GROUNDED DIAGNOSIS FULLY VALIDATED)
+COMPLETE (MILESTONE 4: SRE RUNBOOK ENGINE, PARAMETER TEMPLATING, DIAGNOSIS GROUNDING & FLEET UI VERIFIED IN DOCKER)
 
 ## Session Goal
-Deliver Milestone 3.2 — AI Provider Provenance, Outcome Semantics & Grounded Diagnosis:
-1. Ensure every AI invocation produces verifiable provenance (`invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, `fallback_used`) persisted in PostgreSQL `ai_invocations` table and audit trail.
-2. Establish strict Official Benchmark Mode (`--official`) verifying `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config` and rejecting runs as `TAINTED` if fallback occurs.
-3. Decouple benchmark outcome semantics: `SCENARIO_PASS_RATE`, `GOAL_ACHIEVEMENT_RATE`, `TERMINAL_STATE_ACCURACY`, `SAFE_OPERATOR_DEFERRAL_RATE`.
-4. Correct False Failure semantics based on exhaustive RCA of M3.1's 77.27% rate, driving false failures strictly to 0.0%.
-5. Separate unadulterated `raw_model_diagnosis` from deterministic `evidence_root_cause`, measuring `MODEL_DIAGNOSIS_ACCURACY` vs. `GROUNDED_DIAGNOSIS_ACCURACY`.
-6. Execute 1-iteration official validation run and 3-iteration official benchmark baseline on live Ubuntu 24.04 LTS under WSL2.
-7. Maintain 0.0% False Success and 0.0% Unsafe Action Execution rates.
+Deliver 3-phase autonomous loop engineering upgrade for OpsPilot:
+1. **Phase 1 (AI Diagnostics & Grounding)**: Deterministic SRE evidence extraction across 16 canonical root causes and purpose-aware heuristic fallback for PLAN, REPLAN, and DIAGNOSIS.
+2. **Phase 2 (Enterprise SRE Runbook Engine)**: Parameter templating engine (`{{param}}`), pre-flight dry-run policy simulation, PostgreSQL versioned persistence, and REST endpoints.
+3. **Phase 3 (Fleet Runbooks UI & Container Validation)**: Interactive Runbook drawer in React/Vite dashboard, live dry-run simulation feedback, and full Docker container verification.
 
 ## What Was Done
 1. **Control Plane AI Provenance Persistence (`ai_invocations`)**:

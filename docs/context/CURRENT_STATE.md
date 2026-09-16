@@ -1,11 +1,27 @@
 # Current Project State
 
-Last Updated: 2026-09-14
+Last Updated: 2026-09-16
 
 ## Current Focus
-Milestone 3.2 (AI Provider Provenance, Outcome Semantics & Grounded Diagnosis) completed and verified across an official 3-iteration run on live Ubuntu 24.04 LTS under WSL2.
+Milestone 4 (Enterprise SRE Runbooks, Parameter Templating, AI Diagnosis Grounding & Live Fleet UI) completed and deterministically verified with Docker.
 
 ## Completed
+- **Milestone 4 — Enterprise SRE Runbooks, Parameter Templating & Diagnosis Grounding**:
+  - **Deterministic SRE Diagnosis Grounding (`apps/ai-service`)**: Fast, regex-anchored evidence extraction across all 16 canonical root causes; grounds model diagnostic predictions, reconciles evidence gaps, and enriches diagnostic outputs.
+  - **Purpose-Aware Heuristic Fallback**: Full fallback coverage for PLAN, REPLAN, and DIAGNOSIS requests, strictly honoring schema validation.
+  - **Enterprise SRE Runbook Engine (`apps/control-plane`)**:
+    - Parameter templating engine (`{{param}}`) with validation and variable defaults.
+    - Pre-flight dry-run policy simulation calculating maximum risk and evaluating against security guardrails without modifying host state.
+    - PostgreSQL 16 versioned schema persistence in `runbook_versions` (variables, steps, verification specifications).
+    - Auto-seeding of production SRE runbooks (Nginx custom port deploy, disk log cleanup, service recovery).
+    - REST endpoints: `GET /api/v1/runbooks/{id}`, `POST /api/v1/runbooks/{id}/execute`, `POST /api/v1/runbooks/{id}/dry-run`.
+  - **Command Center Runbooks & Simulation UI (`apps/dashboard`)**:
+    - Interactive parameter configuration drawer.
+    - Real-time policy dry-run verification banner with risk tags and planned step preview.
+    - Fleet execution trigger with instant task transition to live monitoring.
+  - **Containerization & Toolchain Alignment**:
+    - Clean Dockerfile containerization for `ai-service`, `control-plane` (with isolated `GOWORK=off`), and `dashboard`.
+    - 100% test pass rate in isolated Docker Linux container and local environments.
 - **Milestone 3.2 (AI Provider Provenance, Outcome Semantics & Grounded Diagnosis)**:
   - **Authoritative Provenance (`ai_invocations`)**: Every AI invocation records `invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, `fallback_used` persisted in PostgreSQL and structured audit events.
   - **Official Benchmark Mode (`--official`)**: Pre-flight validation confirms `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config`. Fallback invocations = 0, Tainted Run = false.
