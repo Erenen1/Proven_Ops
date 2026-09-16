@@ -7,6 +7,7 @@ import httpx
 from typing import Dict, Any, Tuple, Optional
 from .base import LLMProvider
 from ..models.schemas import ProvenanceMetadata
+from ..services.diagnosis_grounding import extract_evidence_and_root_cause, generate_grounded_remediation
 
 class OllamaProvider(LLMProvider):
     def __init__(self, base_url: str, model_name: str, timeout: float = 60.0):
@@ -91,7 +92,7 @@ class OllamaProvider(LLMProvider):
 
         # Fallback used
         latency_ms = int((time.time() - start_time) * 1000)
-        fallback_data = self._heuristic_fallback(user_prompt)
+        fallback_data = self._heuristic_fallback(user_prompt, purpose=purpose)
         prov = ProvenanceMetadata(
             invocation_id=invocation_id,
             task_id=task_id,
@@ -119,8 +120,63 @@ class OllamaProvider(LLMProvider):
             text = text[start:end]
         return json.loads(text)
 
-    def _heuristic_fallback(self, prompt: str) -> Dict[str, Any]:
+    def _heuristic_fallback(self, prompt: str, purpose: str = "PLAN") -> Dict[str, Any]:
         prompt_lower = prompt.lower()
+
+        # 1. Diagnosis Fallback
+        if purpose == "DIAGNOSIS" or "diagnosis request" in prompt_lower:
+            symptom = ""
+            if 'reported symptom: "' in prompt_lower:
+                try:
+                    symptom = prompt.split('Reported Symptom: "')[1].split('"')[0]
+                except Exception:
+                    pass
+            cause, confidence, evidences = extract_evidence_and_root_cause(symptom, prompt)
+            remediation = generate_grounded_remediation(cause, symptom)
+            return {
+                "identified_problem": f"Detected {cause.value} from system observations and logs",
+                "root_cause": cause.value,
+                "confidence": confidence,
+                "evidence": [e.model_dump() for e in evidences],
+                "remediation_steps": remediation
+            }
+
+        # 2. Replan Fallback
+        if purpose == "REPLAN" or "replanning request" in prompt_lower:
+            # Handle port conflict without violating user intent
+            if "already in use" in prompt_lower or "port" in prompt_lower:
+                return {
+                    "goal": "Diagnose conflicting port occupation and observe system state",
+                    "reasoning": "Detected port collision or socket binding failure. Inspecting active listeners before safe operator deferral.",
+                    "steps": [
+                        {
+                            "id": "replan-step-1",
+                            "action": "execute_command",
+                            "arguments": {"command": "ss -tulpn"},
+                            "reason": "Identify active listeners and processes bound to conflicting port",
+                            "suggested_risk": "READ_ONLY",
+                            "verification_strategy": None
+                        }
+                    ],
+                    "overall_verification": []
+                }
+            return {
+                "goal": "Safely inspect failure state",
+                "reasoning": "Previous operational step encountered a failure. Gathering diagnostic logs without mutating system state.",
+                "steps": [
+                    {
+                        "id": "replan-step-1",
+                        "action": "get_system_info",
+                        "arguments": {},
+                        "reason": "Assess host health and system load",
+                        "suggested_risk": "READ_ONLY",
+                        "verification_strategy": None
+                    }
+                ],
+                "overall_verification": []
+            }
+
+        # 3. Plan Fallback
         if "nginx" in prompt_lower and ("8080" in prompt_lower or "port" in prompt_lower):
             return {
                 "goal": "Install and configure Nginx on custom port 8080 and verify",
@@ -271,3 +327,4 @@ class OllamaProvider(LLMProvider):
             ],
             "overall_verification": []
         }
+

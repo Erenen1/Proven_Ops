@@ -17,6 +17,8 @@ from .prompts.planner import (
     build_diagnosis_prompt,
 )
 from .providers.ollama_provider import OllamaProvider
+from .services.diagnosis_grounding import extract_evidence_and_root_cause
+from .models.schemas import RootCause
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-service")
@@ -102,6 +104,21 @@ async def diagnose_issue(req: DiagnosisRequest):
         )
         diagnosis = DiagnosisResponse.model_validate(raw_json)
         diagnosis.provenance = prov
+
+        # Grounding reconciliation: Ensure deterministic evidence corrects any UNKNOWN or unsupported diagnoses
+        grounded_cause, grounded_conf, grounded_evidences = extract_evidence_and_root_cause(req.symptom, req.untrusted_logs)
+        if grounded_cause != RootCause.UNKNOWN:
+            if diagnosis.root_cause in ["UNKNOWN", "NONE"] or diagnosis.confidence < 0.7:
+                diagnosis.root_cause = grounded_cause.value
+                diagnosis.confidence = max(diagnosis.confidence, grounded_conf)
+            # Append high-confidence deterministic evidence if not already present
+            existing_details = {e.detail for e in (diagnosis.evidence or [])}
+            for ge in grounded_evidences:
+                if ge.detail not in existing_details:
+                    if diagnosis.evidence is None:
+                        diagnosis.evidence = []
+                    diagnosis.evidence.append(ge)
+
         return diagnosis
     except Exception as e:
         logger.error(f"Diagnosis failed: {str(e)}", exc_info=True)

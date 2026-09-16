@@ -122,28 +122,28 @@ Reported Symptom: "{req.symptom}"
 
 Analyze the untrusted logs and symptoms. Provide a structured diagnosis and suggested remediation steps.
 The "root_cause" MUST be selected from one of these canonical categories:
-- PORT_CONFLICT
-- INVALID_CONFIG
-- PACKAGE_MISSING
-- SERVICE_STOPPED
-- SERVICE_CRASH
-- RESTART_LOOP
-- PERMISSION_DENIED
-- DNS_FAILURE
-- CONNECTION_REFUSED
-- HTTP_APPLICATION_FAILURE
-- DISK_PRESSURE
-- CONTAINER_CRASH
-- CONTAINER_RESTART_LOOP
-- CONTAINER_UNHEALTHY
-- IMAGE_NOT_FOUND
-- AGENT_DISCONNECTED
-- TIMEOUT
-- UNSUPPORTED_RESOURCE
-- POLICY_DENIED
-- IDEMPOTENT_SATISFIED
-- NONE
-- UNKNOWN
+- PORT_CONFLICT: "Address already in use", port occupied, bind failure
+- INVALID_CONFIG: "syntax error", directive not allowed, configuration test failed, nginx -t error
+- PACKAGE_MISSING: package not installed, dpkg error, command not found for standard package
+- SERVICE_STOPPED: systemd service is inactive (dead), stopped, or failed to start
+- SERVICE_CRASH: service crashed, core dumped, terminated by fatal signal (SIGSEGV)
+- RESTART_LOOP: unit continuously restarting, start-limit-hit
+- PERMISSION_DENIED: permission denied, operation not permitted, read-only filesystem
+- DNS_FAILURE: name or service not known, NXDOMAIN, host resolution failure
+- CONNECTION_REFUSED: connection refused on target port, service daemon not listening
+- HTTP_APPLICATION_FAILURE: HTTP 500/502/503 status code response from application
+- DISK_PRESSURE: no space left on device, filesystem full, inode exhaustion
+- CONTAINER_CRASH: docker container exited unexpectedly or OOMKilled
+- CONTAINER_RESTART_LOOP: container crash looping
+- CONTAINER_UNHEALTHY: container healthcheck failing
+- IMAGE_NOT_FOUND: docker pull image not found or repository unavailable
+- AGENT_DISCONNECTED: agent transport closed, heartbeat timeout
+- TIMEOUT: execution deadline exceeded, verification timeout
+- UNSUPPORTED_RESOURCE: unit could not be found, missing-unit, non-existent service/resource
+- POLICY_DENIED: action forbidden by policy or RBAC security guardrail
+- IDEMPOTENT_SATISFIED: target condition already met, nothing to do
+- NONE: no error or anomaly detected
+- UNKNOWN: root cause cannot be determined from available logs
 
 Respond ONLY with a JSON object conforming to:
 {{
@@ -152,15 +152,15 @@ Respond ONLY with a JSON object conforming to:
   "confidence": 0.95,
   "evidence": [
     {{
-      "source": "check_port",
-      "detail": "Observed port conflict on 8080"
+      "source": "evidence_log_analysis",
+      "detail": "Observed port conflict: address already in use"
     }}
   ],
   "remediation_steps": [
     {{
       "id": "step-1",
       "action": "execute_command",
-      "arguments": {{"command": "ss -tulpn | grep 8080"}},
+      "arguments": {{"command": "ss -tulpn"}},
       "reason": "Identify process occupying port",
       "suggested_risk": "READ_ONLY",
       "verification_strategy": null
@@ -168,3 +168,4 @@ Respond ONLY with a JSON object conforming to:
   ]
 }}
 """
+
