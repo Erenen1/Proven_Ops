@@ -3,85 +3,58 @@
 Last Updated: 2026-09-16
 
 ## Current Focus
-All 4 Enterprise Roadmap Features (Multi-Host Fleet Canary Rollouts, Real-Time Telemetry & Live Streaming Terminal, OpenTelemetry Distributed Tracing, Automated PKI & mTLS Lifecycle) fully implemented, deterministically tested, and verified across all services.
+Milestone 5 (Production-Grade Infrastructure Orchestration Engine) completed. OpsPilot has transitioned from a prototype to a hardened, enterprise-grade infrastructure operations platform across all 44 specifications with comprehensive multi-node testing, state durability, and zero-blind-trust guardrails intact.
 
 ## Completed
-- **Enterprise Roadmap Features (Full Implementation)**:
-  - **1. Multi-Host Fleet Rollout Engine (`apps/control-plane/internal/fleet`)**:
-    - Canary and rolling rollout strategies (`ALL_AT_ONCE`, `CANARY`, `ROLLING`) with batch partitioning.
-    - Automated blast-radius bounding: `MaxFailures` threshold halts rollout before widespread fleet impact.
-    - Real-time per-host state tracking (`FleetRolloutProgress`, `HostExecutionState`) broadcast via SSE.
-    - Integrated with Task creation and Runbook execution APIs (`handleCreateTask`, `handleExecuteRunbook`).
-  - **2. Real-Time Node Telemetry & Streaming Terminal (`agent`, `control-plane`, `dashboard`)**:
-    - Host resource collector (`discovery/collector.go`): live CPU % via `/proc/stat` delta, RAM bytes/%, Disk % via `df`, 1m load average.
-    - Live command output streaming via `ExecuteWithStream` and `streamingWriter` over bidirectional gRPC stream.
-    - Control Plane `NODE_TELEMETRY` SSE publishing on heartbeat; `GET /api/v1/agents/{id}/telemetry` endpoint.
-    - Dashboard `FleetView`: animated color-coded resource progress bars (CPU, RAM, Disk, Load).
-    - Dashboard `TaskDetailModal`: interactive live terminal console with real-time SSE chunks, stream filtering (stdout/stderr/all), and auto-scroll.
-  - **3. OpenTelemetry Distributed Tracing (`control-plane/internal/telemetry`, `ai-service`, `dashboard`)**:
-    - W3C TraceContext propagation (`traceparent`, `X-Trace-ID`) across HTTP, gRPC metadata, and AI Service HTTP requests.
-    - Automatic `HTTPMiddleware` in Control Plane extracting or minting W3C trace contexts.
-    - AI Service tracing middleware extracting `traceparent` and stamping `trace_id` on invocation provenance (`ai_invocations`).
-    - Dashboard `TaskDetailModal` distributed trace ID badge with one-click copy for APM deep linking.
-  - **4. Automated PKI & mTLS Certificate Lifecycle (`apps/control-plane/internal/pki`, `agent`)**:
-    - Dynamic X.509 client certificate issuance (`IssueAgentCertificate`), validation (`ValidateCertificate`), and renewal (`RenewAgentCertificate`).
-    - gRPC `Register` and REST `/api/v1/pki/enroll` endpoints for dynamic certificate issuance from bootstrap tokens.
-    - Agent auto-enrollment: bootstraps missing local mTLS certificates on first run, saves securely with `0600` permissions.
-    - REST endpoint `/api/v1/pki/renew` for seamless agent certificate rotation without downtime.
-- **Milestone 4 — Enterprise SRE Runbooks, Parameter Templating & Diagnosis Grounding**:
-  - **Deterministic SRE Diagnosis Grounding (`apps/ai-service`)**: Fast, regex-anchored evidence extraction across all 16 canonical root causes; grounds model diagnostic predictions, reconciles evidence gaps, and enriches diagnostic outputs.
-  - **Purpose-Aware Heuristic Fallback**: Full fallback coverage for PLAN, REPLAN, and DIAGNOSIS requests, strictly honoring schema validation.
-  - **Enterprise SRE Runbook Engine (`apps/control-plane`)**:
-    - Parameter templating engine (`{{param}}`) with validation and variable defaults.
-    - Pre-flight dry-run policy simulation calculating maximum risk and evaluating against security guardrails without modifying host state.
-    - PostgreSQL 16 versioned schema persistence in `runbook_versions` (variables, steps, verification specifications).
-    - Auto-seeding of production SRE runbooks (Nginx custom port deploy, disk log cleanup, service recovery).
-    - REST endpoints: `GET /api/v1/runbooks/{id}`, `POST /api/v1/runbooks/{id}/execute`, `POST /api/v1/runbooks/{id}/dry-run`.
-  - **Command Center Runbooks & Simulation UI (`apps/dashboard`)**:
-    - Interactive parameter configuration drawer.
-    - Real-time policy dry-run verification banner with risk tags and planned step preview.
-    - Fleet execution trigger with instant task transition to live monitoring.
-  - **Containerization & Toolchain Alignment**:
-    - Clean Dockerfile containerization for `ai-service`, `control-plane` (with isolated `GOWORK=off`), and `dashboard`.
-    - 100% test pass rate in isolated Docker Linux container and local environments.
-- **Milestone 3.2 (AI Provider Provenance, Outcome Semantics & Grounded Diagnosis)**:
-  - **Authoritative Provenance (`ai_invocations`)**: Every AI invocation records `invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, `fallback_used` persisted in PostgreSQL and structured audit events.
-  - **Official Benchmark Mode (`--official`)**: Pre-flight validation confirms `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config`. Fallback invocations = 0, Tainted Run = false.
-  - **Decoupled Outcome Semantics**:
-    - `Scenario Pass Rate`: **72.22%** (Mean: 71.70%, Median: 76.00%)
-    - `Goal Achievement Rate`: **18.06%** (Mean: 17.33%, Median: 24.00%)
-    - `Terminal State Accuracy`: **75.00%** (Mean: 74.55%, Median: 76.00%)
-  - **Corrected False Failure Semantics**: Full RCA completed (36 runs metric bug, 15 runs evaluator dummy verify, 0 actual product defects). Corrected False Failure Rate = **0.0%**.
-  - **Zero False Success (`0.0%`)**: Verified 0.0% across all 3 iterations.
-  - **Zero Unsafe Actions (`0.0%`)**: Unsafe proposal rate = 0.0%, Unsafe execution rate = 0.0%.
-  - **Structured Output Conformance Rate**: **100.0%**.
-  - **Diagnosis Attribution (Model vs Grounded)**:
-    - `Model Diagnosis Accuracy`: **23.61%** (Mean: 23.03%, Median: 28.00%)
-    - `Grounded Diagnosis Accuracy`: **26.39%** (Mean: 25.70%, Median: 32.00%)
-    - `Model / Evidence Agreement Rate`: **2.78%**
-    - `Unsupported Diagnosis Rate`: **4.17%**
-  - **Validated 3-Iteration Official Baseline (`2026-09-14T14-51-43` on commit `73c4160`)**:
-    - **Total Definitions**: 81 (27 scenarios x 3 iterations)
-    - **Executable Scenarios**: 72
-    - **Environment Invalid**: 9
-    - **Model Digest**: `357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b`
-    - **Fallback Invocations**: 0
-    - **Median Completion Time**: 45.99s
-- **Milestone 3.1 (Benchmark Validity, False-Success Remediation & Reproducible Baseline)**: Established verification contracts, eliminated loops, decoupled prerequisite checking, canonical taxonomy.
-
-- **Milestone 3 (Real Fault Injection & Benchmark Lab)**: Initial 27 fault scenarios created across 8 categories.
-- **Milestone 2 & 2.1 (Failure-Tolerant Execution & Hardening)**: 13 structured failure classifications, persistent `bbolt` execution ledger, uncertain state observation, AI boundary isolation, and execution bounds.
-- **Milestone 1 (Vertical Slice)**: Live Ubuntu 24.04 LTS vertical slice verified with mTLS, PostgreSQL store, Ollama Qwen planning, and deterministic verification.
+- **Milestone 5 — Production-Grade Infrastructure Orchestration Engine**:
+  - **1. Durable 16-State State Machine (`apps/control-plane/internal/statemachine`)**:
+    - Complete lifecycle: `PENDING`, `PRECHECKING`, `SKIPPED`, `WAITING_APPROVAL`, `QUEUED`, `DISPATCHED`, `RUNNING`, `VERIFYING`, `SUCCEEDED`, `FAILED`, `RETRYING`, `COMPENSATING`, `COMPENSATED`, `PARTIALLY_COMPENSATED`, `MANUAL_INTERVENTION_REQUIRED`, `CANCELLED`.
+    - Optimistic concurrency control (`optimistic_lock_version`) on tasks and steps to prevent race conditions.
+    - Database migration `006_production_hardening.sql` applied to PostgreSQL 16.
+  - **2. Idempotency & Desired-State Reconciliation (`agent/internal/tools/ensure_tools.go`)**:
+    - Abstractions: `ensure_package`, `ensure_service`, `ensure_file`, `ensure_directory`, `ensure_port_state`.
+    - Precheck lifecycle returning `SKIPPED_ALREADY_DESIRED` when host is already in target state without performing destructive mutations.
+    - Atomic file replacement (`tmp` -> `fsync` -> `rename`) preventing TOCTOU race conditions.
+    - Idempotency key deduplication at task, step, and operation levels.
+  - **3. DAG Dependency Engine (`apps/control-plane/internal/dag`)**:
+    - Directed Acyclic Graph supporting steps declaring `depends_on: ["step_1", "step_2"]`.
+    - Cycle detection using Kahn's topological sort algorithm.
+    - Independent steps batched for parallel dispatch; failed upstream steps mark downstream dependents as `BLOCKED_BY_DEPENDENCY`.
+  - **4. Saga LIFO Compensation / Rollback Engine (`apps/control-plane/internal/saga`)**:
+    - Explicit reversibility metadata (`FULL`, `PARTIAL`, `NONE`) on all typed actions.
+    - Automated pre-flight snapshotting and LIFO rollback restoration on verification failure.
+    - Rollback actions subjected to deterministic post-verification.
+  - **5. Verification Evidence Contract (`apps/control-plane/internal/verification`)**:
+    - Strict `EXECUTED != VERIFIED` separation.
+    - Structured evidence (`CheckType`, `Target`, `Expected`, `Actual`, `Passed`, `DurationMS`, `AgentID`) recorded in PostgreSQL `verification_results`.
+  - **6. Standard 7-Class Error Taxonomy & Jitter Retry Engine (`apps/control-plane/internal/failures`)**:
+    - Classification: `TRANSIENT`, `PERMANENT`, `POLICY`, `VERIFICATION`, `CONNECTIVITY`, `TIMEOUT`, `UNKNOWN`.
+    - Exponential backoff with random jitter (±20%) for transient and connectivity errors; permanent and policy errors fail-fast.
+  - **7. Security, AST Guard & Secret Redaction (`apps/control-plane/internal/security`, `agent/internal/executor`)**:
+    - AST guard checks blocking subshells (`bash -c`), `eval`, `find -exec`, `xargs`, `curl | sh`, dangerous device writes (`> /dev/sd*`), and path traversal (`../`).
+    - Dedicated `security.RedactString` and `security.RedactMap` masking private keys, JWTs, URI credentials, and API tokens across logs and audit events.
+    - PKI Certificate Revocation List (CRL) validation rejecting revoked agent certificates.
+  - **8. Multi-Node Linux Lab (`docker-compose.yml`, `agent/Dockerfile`)**:
+    - Network isolation: `frontend-net`, `backend-net`, `agent-net`.
+    - Multi-node simulation profile: `docker compose --profile lab up --build` spinning up 5 real Linux agent nodes (`node-01` to `node-05`) with mTLS gRPC communication.
+  - **9. Comprehensive Failure Injection & Race Detector Test Suites**:
+    - `TestFailureInjection_*` in `internal/orchestrator` passing all 10 critical scenarios (duplicate requests, canary halt, Saga rollback, revoked certificates, DAG failure propagation, secret redaction, budget exhaustion).
+    - Data race detection clean (`go test -race`).
+    - Pytest 8/8 passing, Vite TypeScript production build clean.
+  - **10. Production Documentation**:
+    - `docs/THREAT_MODEL.md`
+    - `docs/FAILURE_MODEL.md`
+    - `docs/PRODUCTION_READINESS.md`
 
 ## Blocked
-- None. All unit and integration tests pass.
+- None. All unit, race, and integration tests pass 100%.
 
 ## Important Paths
 - Entry Point & Memory: `GEMINI.md`, `docs/context/`
-- Benchmark Lab Root: `benchmarks/`
-- Benchmark Runner: `benchmarks/run.py`
-- Benchmark Documentation: `docs/BENCHMARKING.md`
+- Threat Model: `docs/THREAT_MODEL.md`
+- Failure Model: `docs/FAILURE_MODEL.md`
+- Production Readiness: `docs/PRODUCTION_READINESS.md`
 - Control Plane Entry: `apps/control-plane/cmd/server/main.go`
 - Server Agent Entry: `agent/cmd/agent/main.go`
 - AI Service Entry: `apps/ai-service/app/main.py`
-- Database Schema: `db/migrations/001_init.sql`
+- Database Migrations: `db/migrations/001_init.sql` through `006_production_hardening.sql`

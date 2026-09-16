@@ -74,6 +74,7 @@ func (r *Runner) isMutatingAction(action string) bool {
 		"get_service_logs": true, "get_journal_logs": true, "check_package": true,
 		"get_open_ports": true, "check_port": true, "http_probe": true, "dns_lookup": true,
 		"read_file": true, "docker_info": true, "docker_ps": true, "docker_logs": true, "docker_inspect": true,
+		"ensure_port_state": true,
 	}
 	return !readOnly[action]
 }

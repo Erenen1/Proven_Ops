@@ -8,24 +8,67 @@ import (
 type TaskStatus string
 
 const (
+	// 16 Standard Production States
+	TaskStatusPending                    TaskStatus = "PENDING"
+	TaskStatusPrechecking                TaskStatus = "PRECHECKING"
+	TaskStatusSkipped                    TaskStatus = "SKIPPED"
+	TaskStatusWaitingApproval            TaskStatus = "WAITING_APPROVAL"
+	TaskStatusQueued                     TaskStatus = "QUEUED"
+	TaskStatusDispatched                 TaskStatus = "DISPATCHED"
+	TaskStatusRunning                    TaskStatus = "RUNNING"
+	TaskStatusVerifying                  TaskStatus = "VERIFYING"
+	TaskStatusSucceeded                  TaskStatus = "SUCCEEDED"
+	TaskStatusFailed                     TaskStatus = "FAILED"
+	TaskStatusRetrying                   TaskStatus = "RETRYING"
+	TaskStatusCompensating               TaskStatus = "COMPENSATING"
+	TaskStatusCompensated                TaskStatus = "COMPENSATED"
+	TaskStatusPartiallyCompensated       TaskStatus = "PARTIALLY_COMPENSATED"
+	TaskStatusManualInterventionRequired TaskStatus = "MANUAL_INTERVENTION_REQUIRED"
+	TaskStatusCancelled                  TaskStatus = "CANCELLED"
+
+	// Aliases for backwards compatibility
 	TaskStatusCreated         TaskStatus = "CREATED"
 	TaskStatusDiscovering     TaskStatus = "DISCOVERING"
 	TaskStatusPlanning        TaskStatus = "PLANNING"
-	TaskStatusWaitingApproval TaskStatus = "WAITING_APPROVAL"
 	TaskStatusExecuting       TaskStatus = "EXECUTING"
 	TaskStatusObserving       TaskStatus = "OBSERVING"
-	TaskStatusVerifying       TaskStatus = "VERIFYING"
 	TaskStatusReplanning      TaskStatus = "REPLANNING"
 	TaskStatusCompleted       TaskStatus = "COMPLETED"
 	TaskStatusPartialSuccess  TaskStatus = "PARTIAL_SUCCESS"
-	TaskStatusFailed          TaskStatus = "FAILED"
 	TaskStatusRollingBack     TaskStatus = "ROLLING_BACK"
 	TaskStatusRolledBack      TaskStatus = "ROLLED_BACK"
 	TaskStatusRollbackFailed  TaskStatus = "ROLLBACK_FAILED"
 	TaskStatusWaitingForAgent TaskStatus = "WAITING_FOR_AGENT"
-	TaskStatusCancelled       TaskStatus = "CANCELLED"
 	TaskStatusTimeout         TaskStatus = "TIMEOUT"
 )
+
+// Reversibility levels for typed actions
+const (
+	ReversibilityFull    = "FULL"
+	ReversibilityPartial = "PARTIAL"
+	ReversibilityNone    = "NONE"
+)
+
+// Standard error classifications for retry engine
+const (
+	ErrorClassTransient    = "TRANSIENT"
+	ErrorClassPermanent    = "PERMANENT"
+	ErrorClassPolicy       = "POLICY"
+	ErrorClassVerification = "VERIFICATION"
+	ErrorClassConnectivity = "CONNECTIVITY"
+	ErrorClassTimeout      = "TIMEOUT"
+	ErrorClassUnknown      = "UNKNOWN"
+)
+
+// RemediationBudget bounds safe automated closed-loop healing
+type RemediationBudget struct {
+	MaxAttempts    int       `json:"max_attempts"`
+	MaxRisk        RiskLevel `json:"max_risk"`
+	MaxRuntimeSec  int       `json:"max_runtime_sec"`
+	AttemptsUsed   int       `json:"attempts_used"`
+	AllowedTools   []string  `json:"allowed_tools,omitempty"`
+	ForbiddenTools []string  `json:"forbidden_tools,omitempty"`
+}
 
 type FailureType string
 
@@ -107,28 +150,32 @@ type AgentMetrics struct {
 }
 
 type Task struct {
-	ID               string             `json:"id"`
-	TraceID          string             `json:"trace_id,omitempty"`
-	Title            string             `json:"title"`
-	Prompt           string             `json:"prompt"`
-	Status           TaskStatus         `json:"status"`
-	CreatedBy        string             `json:"created_by"`
-	TargetAgentIDs   []string           `json:"target_agent_ids"`
-	PlanVersion      int                `json:"plan_version"`
-	IdempotencyKey   *string            `json:"idempotency_key,omitempty"`
-	ReplanCount      int                `json:"replan_count"`
-	MaxReplans       int                `json:"max_replans"`
-	AIPlan           *AIPlanData        `json:"ai_plan,omitempty"`
-	RiskLevel        RiskLevel          `json:"risk_level"`
-	ErrorMessage     string             `json:"error_message,omitempty"`
-	ExecutionSummary string             `json:"execution_summary,omitempty"`
-	FailureDetails   *StructuredFailure `json:"failure_details,omitempty"`
-	RolloutConfig    *RolloutConfig        `json:"rollout_config,omitempty"`
-	RolloutProgress  *FleetRolloutProgress `json:"rollout_progress,omitempty"`
-	Steps            []*TaskStep           `json:"steps"`
-	CreatedAt        time.Time             `json:"created_at"`
-	UpdatedAt        time.Time             `json:"updated_at"`
-	CompletedAt      *time.Time            `json:"completed_at,omitempty"`
+	ID                    string                 `json:"id"`
+	TraceID               string                 `json:"trace_id,omitempty"`
+	Title                 string                 `json:"title"`
+	Prompt                string                 `json:"prompt"`
+	Status                TaskStatus             `json:"status"`
+	CreatedBy             string                 `json:"created_by"`
+	TargetAgentIDs        []string               `json:"target_agent_ids"`
+	PlanVersion           int                    `json:"plan_version"`
+	OptimisticLockVersion int                    `json:"optimistic_lock_version"`
+	IdempotencyKey        *string                `json:"idempotency_key,omitempty"`
+	ReplanCount           int                    `json:"replan_count"`
+	MaxReplans            int                    `json:"max_replans"`
+	RemediationBudget     *RemediationBudget     `json:"remediation_budget,omitempty"`
+	AIPlan                *AIPlanData            `json:"ai_plan,omitempty"`
+	RiskLevel             RiskLevel              `json:"risk_level"`
+	ErrorMessage          string                 `json:"error_message,omitempty"`
+	ExecutionSummary      string                 `json:"execution_summary,omitempty"`
+	FailureDetails        *StructuredFailure     `json:"failure_details,omitempty"`
+	RolloutConfig         *RolloutConfig         `json:"rollout_config,omitempty"`
+	RolloutProgress       *FleetRolloutProgress  `json:"rollout_progress,omitempty"`
+	Steps                 []*TaskStep            `json:"steps"`
+	CancelledAt           *time.Time             `json:"cancelled_at,omitempty"`
+	CancelReason          string                 `json:"cancel_reason,omitempty"`
+	CreatedAt             time.Time              `json:"created_at"`
+	UpdatedAt             time.Time              `json:"updated_at"`
+	CompletedAt           *time.Time             `json:"completed_at,omitempty"`
 }
 
 type RolloutStrategy string
@@ -140,11 +187,13 @@ const (
 )
 
 type RolloutConfig struct {
-	Strategy     RolloutStrategy `json:"strategy"`
-	BatchSize    int             `json:"batch_size,omitempty"`
-	CanaryNodes  int             `json:"canary_nodes,omitempty"`
-	MaxFailures  int             `json:"max_failures"`
-	PauseBetween int             `json:"pause_between_sec,omitempty"`
+	Strategy             RolloutStrategy `json:"strategy"`
+	BatchSize            int             `json:"batch_size,omitempty"`
+	CanaryNodes          int             `json:"canary_nodes,omitempty"`
+	MaxFailures          int             `json:"max_failures"`
+	MaxFailurePercentage float64         `json:"max_failure_percentage,omitempty"`
+	PauseBetween         int             `json:"pause_between_sec,omitempty"`
+	RollbackOnThreshold  bool            `json:"rollback_on_threshold,omitempty"`
 }
 
 type HostExecutionState struct {
@@ -211,22 +260,32 @@ type VerificationStrategy struct {
 }
 
 type TaskStep struct {
-	ID                   string                `json:"id"`
-	TaskID               string                `json:"task_id"`
-	TraceID              string                `json:"trace_id,omitempty"`
-	StepOrder            int                   `json:"step_order"`
-	Action               string                `json:"action"`
-	ExecutionID          string                `json:"execution_id,omitempty"`
-	Arguments            map[string]any        `json:"arguments"`
-	RiskLevel            RiskLevel             `json:"risk_level"`
-	RequiresApproval     bool                  `json:"requires_approval"`
-	VerificationStrategy *VerificationStrategy `json:"verification_strategy,omitempty"`
-	Status               string                `json:"status"` // "PENDING", "RUNNING", "SUCCESS", "FAILED", "SKIPPED"
-	ExitCode             *int                  `json:"exit_code,omitempty"`
-	Stdout               string                `json:"stdout,omitempty"`
-	Stderr               string                `json:"stderr,omitempty"`
-	StartedAt            *time.Time            `json:"started_at,omitempty"`
-	FinishedAt           *time.Time            `json:"finished_at,omitempty"`
+	ID                    string                `json:"id"`
+	TaskID                string                `json:"task_id"`
+	TraceID               string                `json:"trace_id,omitempty"`
+	StepOrder             int                   `json:"step_order"`
+	Action                string                `json:"action"`
+	ExecutionID           string                `json:"execution_id,omitempty"`
+	OptimisticLockVersion int                   `json:"optimistic_lock_version"`
+	IdempotencyKey        string                `json:"idempotency_key,omitempty"`
+	DependsOn             []string              `json:"depends_on,omitempty"`
+	Reversibility         string                `json:"reversibility,omitempty"` // "FULL", "PARTIAL", "NONE"
+	CompensationAction    *AIStepPlan           `json:"compensation_action,omitempty"`
+	PrecheckResult        map[string]any        `json:"precheck_result,omitempty"`
+	AttemptCount          int                   `json:"attempt_count"`
+	MaxAttempts           int                   `json:"max_attempts"`
+	ErrorClass            string                `json:"error_class,omitempty"`
+	RollbackStatus        string                `json:"rollback_status,omitempty"`
+	Arguments             map[string]any        `json:"arguments"`
+	RiskLevel             RiskLevel             `json:"risk_level"`
+	RequiresApproval      bool                  `json:"requires_approval"`
+	VerificationStrategy  *VerificationStrategy `json:"verification_strategy,omitempty"`
+	Status                string                `json:"status"` // "PENDING", "PRECHECKING", "SKIPPED", "RUNNING", "VERIFYING", "SUCCEEDED", "FAILED", etc.
+	ExitCode              *int                  `json:"exit_code,omitempty"`
+	Stdout                string                `json:"stdout,omitempty"`
+	Stderr                string                `json:"stderr,omitempty"`
+	StartedAt             *time.Time            `json:"started_at,omitempty"`
+	FinishedAt            *time.Time            `json:"finished_at,omitempty"`
 }
 
 type TaskEvent struct {
@@ -279,6 +338,8 @@ type VerificationResult struct {
 	CheckType  string         `json:"check_type"`
 	Target     string         `json:"target"`
 	Passed     bool           `json:"passed"`
+	DurationMS int64          `json:"duration_ms,omitempty"`
+	Evidence   map[string]any `json:"evidence,omitempty"`
 	Details    map[string]any `json:"details"`
 	VerifiedAt time.Time      `json:"verified_at"`
 }

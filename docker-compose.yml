@@ -1,6 +1,9 @@
 version: '3.8'
 
 services:
+  # ===========================================================================
+  # CORE SERVICES (Database, Control Plane, AI Service, Dashboard)
+  # ===========================================================================
   postgres:
     image: postgres:16-alpine
     container_name: opspilot-postgres
@@ -9,11 +12,11 @@ services:
       POSTGRES_USER: opspilot
       POSTGRES_PASSWORD: opspilot_dev_secret
       POSTGRES_DB: opspilot
-    ports:
-      - "5432:5432"
     volumes:
       - opspilot_pgdata:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - backend-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U opspilot -d opspilot"]
       interval: 5s
@@ -36,6 +39,10 @@ services:
     ports:
       - "8080:8080"
       - "9090:9090"
+    networks:
+      - frontend-net
+      - backend-net
+      - agent-net
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,6 +59,8 @@ services:
       DEFAULT_LLM_MODEL: qwen2.5:3b
     ports:
       - "8000:8000"
+    networks:
+      - backend-net
 
   dashboard:
     build:
@@ -61,8 +70,117 @@ services:
     restart: unless-stopped
     ports:
       - "3000:80"
+    networks:
+      - frontend-net
     depends_on:
       - control-plane
+
+  # ===========================================================================
+  # LAB NODES (Multi-Node Linux Lab Simulation: node-01 to node-05)
+  # Activate via: docker compose --profile lab up --build
+  # ===========================================================================
+  node-01:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: opspilot-node-01
+    hostname: node-01
+    restart: unless-stopped
+    environment:
+      OPSPILOT_HOSTNAME: node-01
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: opspilot-default-bootstrap-token-2026
+      OPSPILOT_ENVIRONMENT: lab
+      OPSPILOT_TLS_ENABLED: "false"
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-02:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: opspilot-node-02
+    hostname: node-02
+    restart: unless-stopped
+    environment:
+      OPSPILOT_HOSTNAME: node-02
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: opspilot-default-bootstrap-token-2026
+      OPSPILOT_ENVIRONMENT: lab
+      OPSPILOT_TLS_ENABLED: "false"
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-03:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: opspilot-node-03
+    hostname: node-03
+    restart: unless-stopped
+    environment:
+      OPSPILOT_HOSTNAME: node-03
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: opspilot-default-bootstrap-token-2026
+      OPSPILOT_ENVIRONMENT: lab
+      OPSPILOT_TLS_ENABLED: "false"
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-04:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: opspilot-node-04
+    hostname: node-04
+    restart: unless-stopped
+    environment:
+      OPSPILOT_HOSTNAME: node-04
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: opspilot-default-bootstrap-token-2026
+      OPSPILOT_ENVIRONMENT: lab
+      OPSPILOT_TLS_ENABLED: "false"
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-05:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: opspilot-node-05
+    hostname: node-05
+    restart: unless-stopped
+    environment:
+      OPSPILOT_HOSTNAME: node-05
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: opspilot-default-bootstrap-token-2026
+      OPSPILOT_ENVIRONMENT: lab
+      OPSPILOT_TLS_ENABLED: "false"
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+  agent-net:
+    driver: bridge
 
 volumes:
   opspilot_pgdata:

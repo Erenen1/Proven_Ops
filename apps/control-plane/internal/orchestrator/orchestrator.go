@@ -428,17 +428,21 @@ func (o *Orchestrator) ExecuteTask(ctx context.Context, taskID string) {
 				sf.Message = "Agent disconnected during execution"
 			}
 
-			// Check retryability
-			if o.retryPolicy.IsRetryable(sf, step.Action, attempt) {
+			// Check retryability using standard 7-class error classification
+			errClass := failures.ClassifyStandardError(step.Action, exitCode, stdout, stderr)
+			step.ErrorClass = errClass
+			step.AttemptCount = attempt + 1
+
+			if o.retryPolicy.IsRetryable(errClass, step.Action, attempt) {
 				_ = o.store.SaveAuditEvent(ctx, &models.AuditEvent{
 					TaskID:    task.ID,
 					AgentID:   agent.ID,
 					EventType: "RETRY_ATTEMPTED",
 					Action:    step.Action,
-					Details:   map[string]any{"attempt": attempt + 1, "reason": sf.Message},
+					Details:   map[string]any{"attempt": attempt + 1, "error_class": errClass, "reason": sf.Message},
 					CreatedAt: time.Now(),
 				})
-				time.Sleep(o.retryPolicy.GetBackoff(attempt))
+				time.Sleep(o.retryPolicy.GetBackoffWithJitter(attempt))
 				continue
 			}
 			break

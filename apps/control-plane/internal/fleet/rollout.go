@@ -135,6 +135,15 @@ func (e *Engine) ExecuteRollout(
 			mu.Unlock()
 			break
 		}
+		if cfg.MaxFailurePercentage > 0 && len(task.TargetAgentIDs) > 0 {
+			failPct := (float64(progress.FailedHosts) / float64(len(task.TargetAgentIDs))) * 100.0
+			if failPct >= cfg.MaxFailurePercentage {
+				progress.Halted = true
+				progress.HaltReason = fmt.Sprintf("Rollout halted: failure rate (%.1f%%) reached threshold (%.1f%%)", failPct, cfg.MaxFailurePercentage)
+				mu.Unlock()
+				break
+			}
+		}
 		progress.InFlightHosts += len(batch)
 		progress.PendingHosts -= len(batch)
 		for _, aid := range batch {

@@ -357,3 +357,23 @@ func RenewAgentCertificate(ca *CertificateAuthority, existingCertPEM []byte, dur
 	return IssueAgentCertificate(ca, cert.Subject.CommonName, hostname, duration)
 }
 
+// RevocationChecker checks if a given certificate serial number is revoked
+type RevocationChecker interface {
+	IsRevoked(serial string) bool
+}
+
+// ValidateCertificateWithRevocation checks signature, validity period, and revocation status
+func ValidateCertificateWithRevocation(certPEM, caPEM []byte, checker RevocationChecker) (*x509.Certificate, error) {
+	cert, err := ValidateCertificate(certPEM, caPEM)
+	if err != nil {
+		return nil, err
+	}
+
+	if checker != nil && checker.IsRevoked(cert.SerialNumber.String()) {
+		return nil, fmt.Errorf("certificate with serial %s is revoked", cert.SerialNumber.String())
+	}
+
+	return cert, nil
+}
+
+

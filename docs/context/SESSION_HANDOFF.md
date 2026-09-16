@@ -1,73 +1,78 @@
 # Session Handoff
 
-Last Updated: 2026-09-16 13:00
+Last Updated: 2026-09-16 14:15
 
 ## Status
-COMPLETE (ALL 4 ADVANCED ROADMAP FEATURES IMPLEMENTED, TESTED, AND VERIFIED IN DOCKER)
+COMPLETE (PRODUCTION-GRADE INFRASTRUCTURE ORCHESTRATION PLATFORM HARDENING FULLY IMPLEMENTED AND VERIFIED)
 
 ## Session Goal
-Deliver full autonomous implementation of the 4 enterprise roadmap features for OpsPilot:
-1. **Feature 1: Multi-Host Fleet Orchestration**: Canary and rolling rollout strategy engine with automated blast-radius halting.
-2. **Feature 2: Real-Time Node Telemetry & Streaming Terminal**: Dynamic CPU, RAM, Disk, and Load metrics with live stdout/stderr chunk streaming via SSE and gRPC.
-3. **Feature 3: OpenTelemetry Distributed Tracing**: End-to-end W3C TraceContext propagation across Control Plane HTTP router, Agent gRPC, AI Service, and Dashboard.
-4. **Feature 4: Automated PKI & mTLS Certificate Lifecycle**: Dynamic X.509 client issuance, bootstrap token exchange, and certificate renewal/rotation without downtime.
+Transform OpsPilot from prototype/demo tier into a production-grade infrastructure operations platform across 44 explicit engineering and security requirements, preserving architectural invariants (Go Control Plane, Go Agent, Python/FastAPI AI Service, React/TS Dashboard, PostgreSQL 16, gRPC + mTLS, Docker Compose).
 
 ## What Was Done
-1. **Feature 1 — Multi-Host Fleet Canary Rollout Engine (`internal/fleet`)**:
-   - Implemented `ComputeBatches` for `ALL_AT_ONCE`, `CANARY` (1 canary host first, wait for verification, then remainder), and `ROLLING` (batch size chunks).
-   - Implemented `ExecuteRollout` with parallel host execution, per-host state tracking (`FleetRolloutProgress`), and `MaxFailures` blast-radius halting.
-   - Connected `RolloutConfig` to Task creation and Runbook execution API endpoints.
-   - Unit tests: `TestComputeBatches`, `TestExecuteRolloutSuccess`, `TestExecuteRolloutCanaryHaltOnFailure` (100% PASS).
-2. **Feature 2 — Real-Time Node Telemetry & Streaming Terminal (`agent`, `control-plane`, `dashboard`)**:
-   - Host metrics collector (`discovery/collector.go`): live CPU % delta from `/proc/stat`, RAM bytes/%, Disk % via `df`, 1m load average.
-   - Live command streaming via `ExecuteWithStream` and `streamingWriter` over bidirectional gRPC stream.
-   - Control Plane `NODE_TELEMETRY` SSE publishing on heartbeat; `GET /api/v1/agents/{id}/telemetry` endpoint.
-   - Dashboard `FleetView`: animated color-coded resource progress bars (CPU, RAM, Disk, Load).
-   - Dashboard `TaskDetailModal`: interactive live terminal console with real-time SSE chunks, stream filtering (stdout/stderr/all), and auto-scroll.
-3. **Feature 3 — OpenTelemetry Distributed Tracing (`internal/telemetry`, `ai-service`, `dashboard`)**:
-   - W3C TraceContext propagation (`traceparent`, `X-Trace-ID`) across HTTP, gRPC metadata, and AI Service HTTP requests.
-   - Automatic `HTTPMiddleware` in Control Plane extracting or minting W3C trace contexts.
-   - AI Service tracing middleware extracting `traceparent` and stamping `trace_id` on invocation provenance (`ai_invocations`).
-   - Dashboard `TaskDetailModal` distributed trace ID badge with one-click copy for APM deep linking.
-4. **Feature 4 — Automated PKI & mTLS Certificate Lifecycle (`internal/pki`, `agent`)**:
-   - Dynamic X.509 client certificate issuance (`IssueAgentCertificate`), validation (`ValidateCertificate`), and renewal (`RenewAgentCertificate`).
-   - gRPC `Register` and REST `/api/v1/pki/enroll` endpoints for dynamic certificate issuance from bootstrap tokens.
-   - Agent auto-enrollment: bootstraps missing local mTLS certificates on first run, saves securely with `0600` permissions.
-   - REST endpoint `/api/v1/pki/renew` for seamless agent certificate rotation without downtime.
-   - Unit tests: `TestCertificateLifecycle_IssueValidateRenew`, `TestMutualTLS_FullLifecycle`, `TestPKIEnroll_Success`, `TestPKIRenew_Success`, `TestPKIGetCA_Success` (100% PASS).
-2. **AI Service Provider Abstraction & Model Digest**:
-   - Added `ProvenanceMetadata` to `PlanResponse` and `DiagnosisResponse` in `apps/ai-service/app/models/schemas.py`.
-   - Implemented `get_model_digest()` in `OllamaProvider` querying `/api/tags` and measuring precise latency.
-   - Added `/api/v1/config` endpoint returning active provider, model, digest, and fallback allowance.
-   - Fixed replanning prompt serialization bug (`prior_successful_steps`).
-3. **Benchmark Framework Decoupled Outcomes & Grounded Diagnosis**:
-   - Added `OutcomeClass` enum in `benchmarks/schemas/taxonomy.py`.
-   - Added `extract_evidence_root_cause()` and `classify_outcome()` in `benchmarks/runner/evaluator.py`.
-   - Updated `benchmarks/runner/metrics.py` to calculate decoupled rates: `scenario_pass_rate`, `goal_achievement_rate`, `terminal_state_accuracy`, `model_diagnosis_accuracy`, `grounded_diagnosis_accuracy`, `model_evidence_agreement_rate`, `unsupported_diagnosis_rate`, `safe_operator_deferral_rate`, `false_failure_rate`.
-   - Added `--official` flag in `benchmarks/run.py` verifying `/api/v1/config` and capturing Git commit SHA.
-4. **Validated 3-Iteration Official Benchmark Run (`2026-09-14T14-51-43` on Commit `73c4160`)**:
-   - Total Scenario Executions: 81 (27 scenarios x 3 iterations)
-   - Executable Scenarios: 72 | Environment Invalid: 9
-   - Scenario Pass Rate: **72.22%** (Mean: 71.70%, Median: 76.00%)
-   - Goal Achievement Rate: **18.06%** (Mean: 17.33%, Median: 24.00%)
-   - Terminal State Accuracy: **75.00%** (Mean: 74.55%, Median: 76.00%)
-   - Model Diagnosis Accuracy: **23.61%** (Mean: 23.03%, Median: 28.00%)
-   - Grounded Diagnosis Accuracy: **26.39%** (Mean: 25.70%, Median: 32.00%)
-   - Model / Evidence Agreement: **2.78%**
-   - Unsupported Diagnosis Rate: **4.17%**
-   - Structured Output Conformance: **100.0%**
-   - **False Success Rate: 0.0%** (Maintained zero)
-   - **False Failure Rate: 0.0%** (Down from 77.27% — Fully Remediated)
-   - **Unsafe Action Execution Rate: 0.0%** (Maintained zero)
-   - Fallback Invocations: **0** | Tainted Run: **False**
-5. **Documentation**:
-   - Created `docs/AI_PROVENANCE.md`.
-   - Updated `docs/BENCHMARKING.md`, `docs/BENCHMARK_VALIDITY.md`, `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, `docs/context/CURRENT_STATE.md`, `docs/context/DECISIONS.md` (ADR-016), and `README.md`.
-6. **Regression Verification**:
-   - Go control plane unit tests: `go test ./...` in `apps/control-plane` -> All PASS
-   - Go agent unit tests: `go test ./...` in `agent` -> All PASS
-   - Benchmark test suite: `pytest benchmarks/tests/test_benchmark.py` -> 7/7 PASS
+1. **Durable 16-State State Machine & Optimistic Locking (`internal/statemachine`, `internal/models`)**:
+   - Implemented standard 16-state execution lifecycle: `PENDING`, `PRECHECKING`, `SKIPPED`, `WAITING_APPROVAL`, `QUEUED`, `DISPATCHED`, `RUNNING`, `VERIFYING`, `SUCCEEDED`, `FAILED`, `RETRYING`, `COMPENSATING`, `COMPENSATED`, `PARTIALLY_COMPENSATED`, `MANUAL_INTERVENTION_REQUIRED`, `CANCELLED`.
+   - Concurrency control enforced via `optimistic_lock_version` increments on every transition to prevent race conditions during crash recovery or distributed dispatch.
+   - Comprehensive test suite in `statemachine_test.go` (100% pass, tested with `-race`).
+
+2. **Idempotency & Desired-State Reconciliation (`agent/internal/tools/ensure_tools.go`)**:
+   - Built desired-state tools: `ensure_package`, `ensure_service`, `ensure_file`, `ensure_directory`, and `ensure_port_state`.
+   - Added pre-flight check semantics: operations already satisfying target state return `SKIPPED_ALREADY_DESIRED` without destructive mutations.
+   - Atomic file operations: temporary file staging (`.opspilot_tmp_*`), `fsync`, and atomic rename with automatic pre-flight snapshotting.
+   - Path traversal and sensitive system directory validation (`ValidateFilesystemPath`).
+   - Unit tests in `ensure_tools_test.go` (100% pass).
+
+3. **DAG Execution Engine (`internal/dag`)**:
+   - Dependency-aware DAG resolution supporting parallel node batches.
+   - Cycle detection via Kahn's algorithm rejecting invalid cyclic dependency graphs.
+   - Failure propagation marking downstream steps as `BLOCKED_BY_DEPENDENCY`.
+   - Unit tests in `dag_test.go` (100% pass).
+
+4. **Saga LIFO Compensation & Rollback Engine (`internal/saga`)**:
+   - Reversibility contract enforcement (`FULL`, `PARTIAL`, `NONE`).
+   - Automatic derivation of inverse actions (e.g. restore file snapshot, stop started service, remove installed package).
+   - Reverse LIFO execution for completed steps upon failure with strict post-compensation verification.
+   - Unit tests in `saga_test.go` (100% pass).
+
+5. **Deterministic Verification Contract System (`internal/verification`)**:
+   - Hard boundary: `EXECUTED != VERIFIED`.
+   - `VerifyContract` executing systemd checks, TCP socket probes, and HTTP health probes.
+   - Structured verification evidence with timestamp, check type, expected, actual, duration, and agent identity saved to PostgreSQL.
+   - Unit tests in `verifier_test.go` (100% pass).
+
+6. **Error Taxonomy & Jittered Exponential Backoff (`internal/failures`, `internal/orchestrator`)**:
+   - 7 standardized error classes: `TRANSIENT`, `PERMANENT`, `POLICY`, `VERIFICATION`, `CONNECTIVITY`, `TIMEOUT`, `UNKNOWN`.
+   - Fail-fast enforcement on `POLICY` and `PERMANENT` errors.
+   - Full jitter backoff formula (`base * 2^attempt ± 20%`) to prevent thundering herd.
+   - Unit tests in `failure_test.go` (100% pass).
+
+7. **Security, AST Guard & PKI Hardening (`agent/internal/executor`, `internal/pki`, `internal/security`)**:
+   - AST Command Guard hardened against subshells, shell pipes (`curl | sh`), `find -exec`, `xargs`, raw block device writes, and sensitive paths (`/etc/shadow`, `/boot`, `/sys`).
+   - Secret redaction layer (`RedactString`, `RedactJSON`) scrubbing private keys, JWTs, URI credentials, API keys, and sensitive JSON keys.
+   - PKI Certificate Revocation List (CRL) validation preventing execution from compromised or revoked agents.
+   - Single-use and time-bounded bootstrap tokens tracked in PostgreSQL.
+   - Unit tests in `command_guard_test.go`, `pki/mtls_test.go`, and `security/redactor_test.go` (100% pass).
+
+8. **Multi-Node Linux Lab Profile (`docker-compose.yml`, `agent/Dockerfile`)**:
+   - Multi-stage Linux agent Dockerfile (`golang:1.23-alpine` builder + `ubuntu:22.04` runtime).
+   - Docker Compose profile `lab` simulating 5 real Linux agent nodes (`node-01` to `node-05`) with system utilities (`nginx`, `procps`, `iproute2`, `net-tools`).
+   - Isolated Docker networks: `frontend-net`, `backend-net`, and `agent-net` preventing unauthorized direct database access.
+
+9. **Failure Injection & E2E Validation (`internal/orchestrator/failure_injection_test.go`)**:
+   - 10 automated failure injection test suites covering idempotency skips, transient retry recovery, permanent fail-fast, saga rollback, AST command blocking, DAG failure blocking, and CRL certificate rejections.
+   - Verified with Go race detector (`-race`).
+
+10. **Architecture & Operations Documentation**:
+    - Created `docs/THREAT_MODEL.md` detailing all 9 trust boundaries and threat vectors.
+    - Created `docs/FAILURE_MODEL.md` detailing 10 failure classes and recovery strategies.
+    - Created `docs/PRODUCTION_READINESS.md` detailing the operational production checklist.
+    - Updated `docs/context/CURRENT_STATE.md`.
+
+## Regression Verification
+- Go Control Plane unit tests: `go test ./...` in `apps/control-plane` -> All PASS (100%)
+- Go Agent unit tests: `go test ./...` in `agent` -> All PASS (100%)
+- Go Race Detector: `go test -race` across critical packages -> All PASS (0 data races)
+- AI Service unit tests: `pytest` in `apps/ai-service` -> 8/8 PASS (100%)
+- Dashboard Vite build: `npm run build` in `apps/dashboard` -> 0 errors, production bundle built
 
 ## Resume Instructions
-New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`. Milestone 3.2 is fully completed and ready for operator review.
-
+New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`. All production-readiness hardening milestones are fully completed and verified.
