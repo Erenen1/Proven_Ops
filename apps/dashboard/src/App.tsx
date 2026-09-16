@@ -105,8 +105,16 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === 'runbooks' && (
-          <RunbooksView runbooks={runbooks} />
+          <RunbooksView
+            runbooks={runbooks}
+            agents={agents}
+            onTaskCreated={(newTask) => {
+              setTasks((prev) => [newTask, ...prev]);
+              setSelectedTask(newTask);
+            }}
+          />
         )}
+
 
         {activeTab === 'audit' && (
           <AuditView />

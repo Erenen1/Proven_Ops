@@ -146,6 +146,35 @@ export interface AuditEvent {
   created_at: string;
 }
 
+export interface RunbookVariable {
+  name: string;
+  description: string;
+  default?: string;
+  required: boolean;
+}
+
+export interface RunbookExecutionResult {
+  task_id?: string;
+  dry_run: boolean;
+  plan?: {
+    goal: string;
+    reasoning: string;
+    steps: Array<{
+      id: string;
+      action: string;
+      arguments: Record<string, any>;
+      reason: string;
+      suggested_risk: string;
+      verification_strategy?: any;
+    }>;
+    overall_verification?: any[];
+  };
+  validations: string[];
+  policy_pass: boolean;
+  max_risk: string;
+  error?: string;
+}
+
 export interface Runbook {
   id: string;
   slug: string;
@@ -153,8 +182,10 @@ export interface Runbook {
   description: string;
   created_from_task?: string;
   latest_version: number;
-  variables: any[];
-  steps: any[];
+  variables?: RunbookVariable[];
+  steps?: any[];
+  overall_verification?: any[];
   created_at: string;
   updated_at: string;
 }
+
