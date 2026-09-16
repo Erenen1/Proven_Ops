@@ -122,11 +122,51 @@ type Task struct {
 	ErrorMessage     string             `json:"error_message,omitempty"`
 	ExecutionSummary string             `json:"execution_summary,omitempty"`
 	FailureDetails   *StructuredFailure `json:"failure_details,omitempty"`
-	Steps            []*TaskStep        `json:"steps"`
-	CreatedAt        time.Time          `json:"created_at"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	CompletedAt      *time.Time         `json:"completed_at,omitempty"`
+	RolloutConfig    *RolloutConfig        `json:"rollout_config,omitempty"`
+	RolloutProgress  *FleetRolloutProgress `json:"rollout_progress,omitempty"`
+	Steps            []*TaskStep           `json:"steps"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+	CompletedAt      *time.Time            `json:"completed_at,omitempty"`
 }
+
+type RolloutStrategy string
+
+const (
+	RolloutAllAtOnce RolloutStrategy = "ALL_AT_ONCE"
+	RolloutCanary    RolloutStrategy = "CANARY"
+	RolloutRolling   RolloutStrategy = "ROLLING"
+)
+
+type RolloutConfig struct {
+	Strategy     RolloutStrategy `json:"strategy"`
+	BatchSize    int             `json:"batch_size,omitempty"`
+	CanaryNodes  int             `json:"canary_nodes,omitempty"`
+	MaxFailures  int             `json:"max_failures"`
+	PauseBetween int             `json:"pause_between_sec,omitempty"`
+}
+
+type HostExecutionState struct {
+	AgentID      string     `json:"agent_id"`
+	Hostname     string     `json:"hostname"`
+	Status       TaskStatus `json:"status"`
+	CurrentStep  string     `json:"current_step,omitempty"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+type FleetRolloutProgress struct {
+	TotalHosts     int                            `json:"total_hosts"`
+	CompletedHosts int                            `json:"completed_hosts"`
+	FailedHosts    int                            `json:"failed_hosts"`
+	InFlightHosts  int                            `json:"in_flight_hosts"`
+	PendingHosts   int                            `json:"pending_hosts"`
+	Halted         bool                           `json:"halted"`
+	HaltReason     string                         `json:"halt_reason,omitempty"`
+	HostStates     map[string]*HostExecutionState `json:"host_states"`
+}
+
 
 type AIProvenanceData struct {
 	InvocationID   string    `json:"invocation_id"`
@@ -278,7 +318,9 @@ type RunbookExecutionRequest struct {
 	TargetAgentIDs []string          `json:"target_agent_ids"`
 	Parameters     map[string]string `json:"parameters"`
 	DryRun         bool              `json:"dry_run,omitempty"`
+	RolloutConfig  *RolloutConfig    `json:"rollout_config,omitempty"`
 }
+
 
 type RunbookExecutionResult struct {
 	TaskID      string        `json:"task_id,omitempty"`

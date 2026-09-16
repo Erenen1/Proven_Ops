@@ -162,9 +162,10 @@ func (h *Handler) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title          string   `json:"title"`
-		Prompt         string   `json:"prompt"`
-		TargetAgentIDs []string `json:"target_agent_ids"`
+		Title          string                `json:"title"`
+		Prompt         string                `json:"prompt"`
+		TargetAgentIDs []string              `json:"target_agent_ids"`
+		RolloutConfig  *models.RolloutConfig `json:"rollout_config,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request")
@@ -219,8 +220,16 @@ func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		PlanVersion:    1,
 		MaxReplans:     3,
 		RiskLevel:      models.RiskLow,
+		RolloutConfig:  req.RolloutConfig,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
+	}
+	if task.RolloutConfig == nil && len(task.TargetAgentIDs) > 1 {
+		task.RolloutConfig = &models.RolloutConfig{
+			Strategy:    models.RolloutCanary,
+			CanaryNodes: 1,
+			MaxFailures: 1,
+		}
 	}
 	if idempotencyKey != "" {
 		task.IdempotencyKey = &idempotencyKey
@@ -423,8 +432,16 @@ func (h *Handler) handleExecuteRunbook(w http.ResponseWriter, r *http.Request) {
 		MaxReplans:     3,
 		RiskLevel:      dryRunRes.MaxRisk,
 		AIPlan:         plan,
+		RolloutConfig:  req.RolloutConfig,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
+	}
+	if task.RolloutConfig == nil && len(task.TargetAgentIDs) > 1 {
+		task.RolloutConfig = &models.RolloutConfig{
+			Strategy:    models.RolloutCanary,
+			CanaryNodes: 1,
+			MaxFailures: 1,
+		}
 	}
 
 	if err := h.store.SaveTask(r.Context(), task); err != nil {
