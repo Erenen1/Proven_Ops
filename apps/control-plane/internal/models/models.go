@@ -253,18 +253,44 @@ type AuditEvent struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
-type Runbook struct {
-	ID              string           `json:"id"`
-	Slug            string           `json:"slug"`
-	Title           string           `json:"title"`
-	Description     string           `json:"description"`
-	CreatedFromTask string           `json:"created_from_task,omitempty"`
-	LatestVersion   int              `json:"latest_version"`
-	Variables       []map[string]any `json:"variables"`
-	Steps           []*AIStepPlan    `json:"steps"`
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
+type RunbookVariable struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Default     string `json:"default,omitempty"`
+	Required    bool   `json:"required"`
 }
+
+type Runbook struct {
+	ID                  string                  `json:"id"`
+	Slug                string                  `json:"slug"`
+	Title               string                  `json:"title"`
+	Description         string                  `json:"description"`
+	CreatedFromTask     string                  `json:"created_from_task,omitempty"`
+	LatestVersion       int                     `json:"latest_version"`
+	Variables           []RunbookVariable       `json:"variables"`
+	Steps               []*AIStepPlan           `json:"steps"`
+	OverallVerification []*VerificationStrategy `json:"overall_verification,omitempty"`
+	CreatedAt           time.Time               `json:"created_at"`
+	UpdatedAt           time.Time               `json:"updated_at"`
+}
+
+type RunbookExecutionRequest struct {
+	TargetAgentIDs []string          `json:"target_agent_ids"`
+	Parameters     map[string]string `json:"parameters"`
+	DryRun         bool              `json:"dry_run,omitempty"`
+}
+
+type RunbookExecutionResult struct {
+	TaskID      string        `json:"task_id,omitempty"`
+	DryRun      bool          `json:"dry_run"`
+	Plan        *AIPlanData   `json:"plan"`
+	Validations []string      `json:"validations"`
+	PolicyPass  bool          `json:"policy_pass"`
+	MaxRisk     RiskLevel     `json:"max_risk"`
+	Error       string        `json:"error,omitempty"`
+}
+
+
 
 func (t *Task) MarshalPlan() string {
 	if t.AIPlan == nil {

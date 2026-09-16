@@ -4,9 +4,9 @@ WORKDIR /workspace
 
 COPY proto/ ./proto/
 COPY apps/control-plane/ ./apps/control-plane/
-COPY go.work ./
 
 WORKDIR /workspace/apps/control-plane
+ENV GOWORK=off
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/control-plane ./cmd/server
 

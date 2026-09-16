@@ -685,6 +685,10 @@ func (s *PostgresStore) SaveRunbook(ctx context.Context, rb *models.Runbook) err
 		}
 	}
 
+	if rb.LatestVersion <= 0 {
+		rb.LatestVersion = 1
+	}
+
 	query := `
 		INSERT INTO runbooks (
 			id, slug, title, description, created_from_task, created_at, updated_at
@@ -695,23 +699,61 @@ func (s *PostgresStore) SaveRunbook(ctx context.Context, rb *models.Runbook) err
 			updated_at = EXCLUDED.updated_at
 	`
 	now := time.Now()
-	_, err := s.pool.Exec(ctx, query,
+	if _, err := s.pool.Exec(ctx, query,
 		rb.ID, rb.Slug, rb.Title, rb.Description, taskUUID, now, now,
-	)
-	return err
+	); err != nil {
+		return fmt.Errorf("failed to save runbook header: %w", err)
+	}
+
+	varsJSON, _ := json.Marshal(rb.Variables)
+	stepsJSON, _ := json.Marshal(rb.Steps)
+	verifJSON, _ := json.Marshal(rb.OverallVerification)
+
+	vQuery := `
+		INSERT INTO runbook_versions (
+			runbook_id, version, variables, steps, verification_spec, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (runbook_id, version) DO UPDATE SET
+			variables = EXCLUDED.variables,
+			steps = EXCLUDED.steps,
+			verification_spec = EXCLUDED.verification_spec
+	`
+	if _, err := s.pool.Exec(ctx, vQuery,
+		rb.ID, rb.LatestVersion, varsJSON, stepsJSON, verifJSON, now,
+	); err != nil {
+		return fmt.Errorf("failed to save runbook version: %w", err)
+	}
+
+	return nil
 }
 
 func (s *PostgresStore) GetRunbook(ctx context.Context, idOrSlug string) (*models.Runbook, error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT id, slug, title, description, created_from_task, created_at, updated_at
-		FROM runbooks WHERE id::text = $1 OR slug = $1
+		SELECT r.id, r.slug, r.title, r.description, r.created_from_task, r.created_at, r.updated_at,
+		       COALESCE(v.version, 1),
+		       COALESCE(v.variables, '[]'::jsonb),
+		       COALESCE(v.steps, '[]'::jsonb),
+		       COALESCE(v.verification_spec, '[]'::jsonb)
+		FROM runbooks r
+		LEFT JOIN LATERAL (
+			SELECT version, variables, steps, verification_spec
+			FROM runbook_versions
+			WHERE runbook_id = r.id
+			ORDER BY version DESC
+			LIMIT 1
+		) v ON true
+		WHERE r.id::text = $1 OR r.slug = $1
 	`, idOrSlug)
 
 	var rb models.Runbook
 	var taskUUID *uuid.UUID
 	var desc *string
+	var varsJSON, stepsJSON, verifJSON []byte
 
-	err := row.Scan(&rb.ID, &rb.Slug, &rb.Title, &desc, &taskUUID, &rb.CreatedAt, &rb.UpdatedAt)
+	err := row.Scan(
+		&rb.ID, &rb.Slug, &rb.Title, &desc, &taskUUID, &rb.CreatedAt, &rb.UpdatedAt,
+		&rb.LatestVersion, &varsJSON, &stepsJSON, &verifJSON,
+	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("runbook not found: %s", idOrSlug)
@@ -724,13 +766,29 @@ func (s *PostgresStore) GetRunbook(ctx context.Context, idOrSlug string) (*model
 	if taskUUID != nil {
 		rb.CreatedFromTask = taskUUID.String()
 	}
+	_ = json.Unmarshal(varsJSON, &rb.Variables)
+	_ = json.Unmarshal(stepsJSON, &rb.Steps)
+	_ = json.Unmarshal(verifJSON, &rb.OverallVerification)
+
 	return &rb, nil
 }
 
 func (s *PostgresStore) ListRunbooks(ctx context.Context) ([]*models.Runbook, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, slug, title, description, created_from_task, created_at, updated_at
-		FROM runbooks ORDER BY created_at DESC
+		SELECT r.id, r.slug, r.title, r.description, r.created_from_task, r.created_at, r.updated_at,
+		       COALESCE(v.version, 1),
+		       COALESCE(v.variables, '[]'::jsonb),
+		       COALESCE(v.steps, '[]'::jsonb),
+		       COALESCE(v.verification_spec, '[]'::jsonb)
+		FROM runbooks r
+		LEFT JOIN LATERAL (
+			SELECT version, variables, steps, verification_spec
+			FROM runbook_versions
+			WHERE runbook_id = r.id
+			ORDER BY version DESC
+			LIMIT 1
+		) v ON true
+		ORDER BY r.created_at DESC
 	`)
 	if err != nil {
 		return nil, err
@@ -742,7 +800,12 @@ func (s *PostgresStore) ListRunbooks(ctx context.Context) ([]*models.Runbook, er
 		var rb models.Runbook
 		var taskUUID *uuid.UUID
 		var desc *string
-		if err := rows.Scan(&rb.ID, &rb.Slug, &rb.Title, &desc, &taskUUID, &rb.CreatedAt, &rb.UpdatedAt); err != nil {
+		var varsJSON, stepsJSON, verifJSON []byte
+
+		if err := rows.Scan(
+			&rb.ID, &rb.Slug, &rb.Title, &desc, &taskUUID, &rb.CreatedAt, &rb.UpdatedAt,
+			&rb.LatestVersion, &varsJSON, &stepsJSON, &verifJSON,
+		); err != nil {
 			return nil, err
 		}
 		if desc != nil {
@@ -751,6 +814,10 @@ func (s *PostgresStore) ListRunbooks(ctx context.Context) ([]*models.Runbook, er
 		if taskUUID != nil {
 			rb.CreatedFromTask = taskUUID.String()
 		}
+		_ = json.Unmarshal(varsJSON, &rb.Variables)
+		_ = json.Unmarshal(stepsJSON, &rb.Steps)
+		_ = json.Unmarshal(verifJSON, &rb.OverallVerification)
+
 		list = append(list, &rb)
 	}
 	return list, nil
