@@ -207,7 +207,27 @@ func (c *AgentClient) handleExecuteStep(
 	log.Printf("[OpsPilot Agent] Executing step %s: action=%s", cmd.StepId, cmd.Action)
 
 	executionID := fmt.Sprintf("%s/%s", cmd.TaskId, cmd.StepId)
-	res, err := c.runner.ExecuteWithID(ctx, executionID, cmd.Action, cmd.ArgumentsJson, int(cmd.TimeoutSeconds))
+
+	onChunk := func(streamType string, chunk string) {
+		if chunk == "" {
+			return
+		}
+		_ = stream.Send(&opspilotv1.AgentStreamMessage{
+			MessageId: uuid.New().String(),
+			AgentId:   c.agentID,
+			Payload: &opspilotv1.AgentStreamMessage_OutputChunk{
+				OutputChunk: &opspilotv1.StepOutputChunk{
+					TaskId:        cmd.TaskId,
+					StepId:        cmd.StepId,
+					StreamType:    streamType,
+					Data:          chunk,
+					TimestampUnix: time.Now().Unix(),
+				},
+			},
+		})
+	}
+
+	res, err := c.runner.ExecuteWithStream(ctx, executionID, cmd.Action, cmd.ArgumentsJson, int(cmd.TimeoutSeconds), onChunk)
 	if err != nil {
 		log.Printf("[OpsPilot Agent] Execution error for step %s: %v", cmd.StepId, err)
 		res = &executor.StepExecutionResult{
@@ -217,23 +237,6 @@ func (c *AgentClient) handleExecuteStep(
 			DurationMS: 0,
 			Success:    false,
 		}
-	}
-
-	// Stream stdout chunk if present
-	if res.Stdout != "" {
-		_ = stream.Send(&opspilotv1.AgentStreamMessage{
-			MessageId: uuid.New().String(),
-			AgentId:   c.agentID,
-			Payload: &opspilotv1.AgentStreamMessage_OutputChunk{
-				OutputChunk: &opspilotv1.StepOutputChunk{
-					TaskId:        cmd.TaskId,
-					StepId:        cmd.StepId,
-					StreamType:    "stdout",
-					Data:          res.Stdout,
-					TimestampUnix: time.Now().Unix(),
-				},
-			},
-		})
 	}
 
 	dataJSON, _ := json.Marshal(res.Data)

@@ -45,6 +45,36 @@ export const App: React.FC = () => {
       loadAll();
     };
 
+    eventSource.addEventListener('NODE_TELEMETRY', (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const metrics = payload.payload || payload;
+        if (metrics && metrics.agent_id) {
+          setAgents((prev) =>
+            prev.map((a) => {
+              if (a.id === metrics.agent_id) {
+                return {
+                  ...a,
+                  status: 'online',
+                  last_heartbeat: new Date().toISOString(),
+                  last_metrics: {
+                    cpu_usage_percent: Number(metrics.cpu_usage_percent || 0),
+                    memory_usage_bytes: Number(metrics.memory_usage_bytes || 0),
+                    memory_total_bytes: Number(metrics.memory_total_bytes || 0),
+                    disk_usage_percent: Number(metrics.disk_usage_percent || 0),
+                    load_avg_1m: Number(metrics.load_avg_1m || 0),
+                    active_tasks: Number(metrics.active_tasks || 0),
+                    recorded_at: new Date().toISOString(),
+                  },
+                };
+              }
+              return a;
+            })
+          );
+        }
+      } catch (_) {}
+    });
+
     return () => {
       clearInterval(interval);
       eventSource.close();

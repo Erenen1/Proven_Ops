@@ -102,6 +102,20 @@ func (s *Server) SendHeartbeat(ctx context.Context, req *opspilotv1.HeartbeatReq
 	}
 
 	_ = s.store.SaveHeartbeat(ctx, req.AgentId, metrics)
+
+	if s.hub != nil {
+		s.hub.Publish("", "NODE_TELEMETRY", map[string]any{
+			"agent_id":           req.AgentId,
+			"cpu_usage_percent":  req.CpuUsagePercent,
+			"memory_usage_bytes": req.MemoryUsageBytes,
+			"memory_total_bytes": req.MemoryTotalBytes,
+			"disk_usage_percent": req.DiskUsagePercent,
+			"load_avg_1m":        req.LoadAvg_1M,
+			"active_tasks":       req.ActiveTasks,
+			"timestamp_unix":     req.TimestampUnix,
+		})
+	}
+
 	return &opspilotv1.HeartbeatResponse{
 		Acknowledged:    true,
 		HasPendingTasks: false,

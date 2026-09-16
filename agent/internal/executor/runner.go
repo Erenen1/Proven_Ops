@@ -47,6 +47,21 @@ type StepExecutionResult struct {
 	Data       map[string]any
 }
 
+type OutputChunkHandler func(streamType string, chunk string)
+
+type streamingWriter struct {
+	buf        *bytes.Buffer
+	streamType string
+	onChunk    OutputChunkHandler
+}
+
+func (w *streamingWriter) Write(p []byte) (n int, err error) {
+	if w.onChunk != nil && len(p) > 0 {
+		w.onChunk(w.streamType, string(p))
+	}
+	return w.buf.Write(p)
+}
+
 func (r *Runner) Execute(ctx context.Context, action string, argsJSON string, timeoutSec int) (*StepExecutionResult, error) {
 	return r.ExecuteWithID(ctx, "", action, argsJSON, timeoutSec)
 }
@@ -64,6 +79,10 @@ func (r *Runner) isMutatingAction(action string) bool {
 }
 
 func (r *Runner) ExecuteWithID(ctx context.Context, executionID string, action string, argsJSON string, timeoutSec int) (*StepExecutionResult, error) {
+	return r.ExecuteWithStream(ctx, executionID, action, argsJSON, timeoutSec, nil)
+}
+
+func (r *Runner) ExecuteWithStream(ctx context.Context, executionID string, action string, argsJSON string, timeoutSec int, onChunk OutputChunkHandler) (*StepExecutionResult, error) {
 	if executionID != "" {
 		// 1. Check persistent ledger first
 		if r.ledger != nil {
@@ -164,6 +183,9 @@ func (r *Runner) ExecuteWithID(ctx context.Context, executionID string, action s
 		res, err := tool.Execute(ctxWithTimeout, args)
 		duration := time.Since(start).Milliseconds()
 		if err != nil {
+			if onChunk != nil && err.Error() != "" {
+				onChunk("stderr", err.Error()+"\n")
+			}
 			return &StepExecutionResult{
 				Action:     action,
 				ExitCode:   1,
@@ -171,6 +193,14 @@ func (r *Runner) ExecuteWithID(ctx context.Context, executionID string, action s
 				DurationMS: duration,
 				Success:    false,
 			}, nil
+		}
+		if onChunk != nil {
+			if res.Stdout != "" {
+				onChunk("stdout", res.Stdout)
+			}
+			if res.Stderr != "" {
+				onChunk("stderr", res.Stderr)
+			}
 		}
 		out := &StepExecutionResult{
 			Action:     action,
@@ -208,6 +238,9 @@ func (r *Runner) ExecuteWithID(ctx context.Context, executionID string, action s
 				DurationMS: duration,
 				Success:    false,
 			}
+			if onChunk != nil {
+				onChunk("stderr", secOut.Stderr+"\n")
+			}
 			if executionID != "" && r.ledger != nil {
 				_ = r.ledger.RecordCompletion(executionID, StatusFailed, secOut)
 			}
@@ -216,8 +249,8 @@ func (r *Runner) ExecuteWithID(ctx context.Context, executionID string, action s
 
 		cmd := exec.CommandContext(ctxWithTimeout, "bash", "-c", cmdStr)
 		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
+		cmd.Stdout = &streamingWriter{buf: &stdout, streamType: "stdout", onChunk: onChunk}
+		cmd.Stderr = &streamingWriter{buf: &stderr, streamType: "stderr", onChunk: onChunk}
 
 		err := cmd.Run()
 		duration := time.Since(start).Milliseconds()

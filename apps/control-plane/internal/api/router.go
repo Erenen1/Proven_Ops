@@ -70,6 +70,7 @@ func NewRouter(
 		// Fleet & Agents
 		r.Get("/agents", h.handleListAgents)
 		r.Get("/agents/{id}", h.handleGetAgent)
+		r.Get("/agents/{id}/telemetry", h.handleGetAgentTelemetry)
 
 		// Tasks
 		r.Get("/tasks", h.handleListTasks)
@@ -149,6 +150,21 @@ func (h *Handler) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, agent)
+}
+
+func (h *Handler) handleGetAgentTelemetry(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	agent, err := h.store.GetAgent(r.Context(), id)
+	if err != nil {
+		jsonError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"agent_id": agent.ID,
+		"hostname": agent.Hostname,
+		"status":   agent.Status,
+		"metrics":  agent.LastMetrics,
+	})
 }
 
 func (h *Handler) handleListTasks(w http.ResponseWriter, r *http.Request) {
