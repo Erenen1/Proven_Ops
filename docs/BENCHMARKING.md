@@ -1,9 +1,9 @@
-# OpsPilot — Real Fault Injection & Benchmark Lab
+# ProvenOps — Real Fault Injection & Benchmark Lab
 
-OpsPilot operates under a strict reliability mandate:
+ProvenOps operates under a strict reliability mandate:
 > **"Claims of autonomous reliability are meaningless without empirical proof against real infrastructure failures."**
 > 
-> OpsPilot does not rely on mock JSON schemas or simulated agent responses. The Benchmark Lab injects real Linux faults on actual Ubuntu hosts (Ubuntu 22.04 / 24.04 LTS), commands the agent via natural sysadmin intent, and evaluates the outcome through an **independent verifier** that inspects the operating system directly.
+> ProvenOps does not rely on mock JSON schemas or simulated agent responses. The Benchmark Lab injects real Linux faults on actual Ubuntu hosts (Ubuntu 22.04 / 24.04 LTS), commands the agent via natural sysadmin intent, and evaluates the outcome through an **independent verifier** that inspects the operating system directly.
 
 ---
 
@@ -21,7 +21,7 @@ OpsPilot operates under a strict reliability mandate:
 
 3. **Guaranteed Cleanup & Environment Idempotency**:
    - Every scenario follows a deterministic lifecycle:
-     $$\text{Setup} \longrightarrow \text{Fault Injection} \longrightarrow \text{OpsPilot Task} \longrightarrow \text{Execution} \longrightarrow \text{Independent Evaluation} \longrightarrow \text{Cleanup / Reset} \longrightarrow \text{Result}$$
+     $$\text{Setup} \longrightarrow \text{Fault Injection} \longrightarrow \text{ProvenOps Task} \longrightarrow \text{Execution} \longrightarrow \text{Independent Evaluation} \longrightarrow \text{Cleanup / Reset} \longrightarrow \text{Result}$$
    - Cleanup scripts execute in guaranteed `finally` blocks, ensuring that one test failure never cascades to corrupt downstream tests.
 
 4. **Taxonomic Diagnosis vs Free-Text**:
@@ -42,7 +42,7 @@ benchmarks/
 │   ├── evaluator.py           # Independent OS host verifier & AST action auditor
 │   ├── injector.py            # WSL2 / Linux bash script execution engine
 │   ├── baseline.py            # Pre-flight health checker (CP, Agent, AI Service, OS)
-│   ├── client.py              # HTTP client for OpsPilot Control Plane & AI Service
+│   ├── client.py              # HTTP client for ProvenOps Control Plane & AI Service
 │   ├── metrics.py             # Math engine for all benchmark metrics and medians
 │   └── reporter.py            # Generator for summary.json, report.md, scenarios.jsonl
 ├── scenarios/                 # 27 Real Fault Scenarios

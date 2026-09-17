@@ -28,8 +28,11 @@ dist/
 # Temporary / Scratch runtime directories
 scratch/
 tmp/
+temp/
 .gotmp/
 artifacts/runtime/
+artifacts/generated/
+*.log
 
 # Go
 apps/control-plane/bin/
@@ -75,6 +78,7 @@ wheels/
 *.egg
 .pytest_cache/
 .coverage
+coverage/
 htmlcov/
 
 # Databases & Local Storage

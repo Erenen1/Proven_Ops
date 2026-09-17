@@ -1,6 +1,6 @@
 param()
 
-$go = "C:\Program Files\Go\bin\go.exe"
+$go = if (Get-Command go -ErrorAction SilentlyContinue) { "go" } elseif (Test-Path "C:\Program Files\Go\bin\go.exe") { "C:\Program Files\Go\bin\go.exe" } else { "go" }
 if (-not (Test-Path "bin")) {
     New-Item -ItemType Directory -Force -Path "bin" | Out-Null
 }
@@ -12,7 +12,7 @@ Pop-Location
 
 Write-Host "Building Agent (Windows)..."
 Push-Location agent
-& $go build -ldflags="-s -w" -o ../bin/opspilot-agent.exe ./cmd/agent
+& $go build -ldflags="-s -w" -o ../bin/provenops-agent.exe ./cmd/agent
 Pop-Location
 
 Write-Host "Building Agent (Linux amd64)..."
@@ -20,7 +20,7 @@ Push-Location agent
 $env:GOOS = "linux"
 $env:GOARCH = "amd64"
 $env:CGO_ENABLED = "0"
-& $go build -ldflags="-s -w" -o ../bin/opspilot-agent ./cmd/agent
+& $go build -ldflags="-s -w" -o ../bin/provenops-agent ./cmd/agent
 $env:GOOS = ""
 $env:GOARCH = ""
 Pop-Location

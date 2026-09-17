@@ -1,8 +1,8 @@
-# OpsPilot Technical Architecture
+# ProvenOps Technical Architecture
 
 ## 1. System Overview
 
-OpsPilot is composed of five loosely coupled components collaborating over typed contracts:
+ProvenOps is composed of five loosely coupled components collaborating over typed contracts:
 
 ```
 [ Dashboard (React 18 / Vite / TS / Tailwind) ]
@@ -30,7 +30,7 @@ OpsPilot is composed of five loosely coupled components collaborating over typed
 - **Storage (`internal/database/`)**: Dual-mode store (`*pgxpool.Pool` for PostgreSQL with an in-memory resilient fallback).
 
 ### 2.2 Server Agent (`agent/`)
-- **Execution Mode**: Single binary daemon (`opspilot-agent`), non-root `opspilot` system user with tightly scoped sudo (`systemctl`, `apt-get`, `dpkg`).
+- **Execution Mode**: Single binary daemon (`provenops-agent`), non-root `provenops` system user with tightly scoped sudo (`systemctl`, `apt-get`, `dpkg`).
 - **Network Model**: Outbound gRPC connection over mTLS to Control Plane. No listening ports on managed Linux hosts.
 - **Discovery (`internal/discovery/`)**: Reports hostname, OS distro/version (Ubuntu 22.04/24.04), hardware specs, and capabilities (`systemd`, `apt`, `docker`, `network`, `journald`).
 - **Typed Tools (`internal/tools/`)**: 20+ typed actions for systemd services, apt packages, file management (with atomic `.bak` backups), network probes, and Docker containers.

@@ -14,14 +14,14 @@ Chat history is ephemeral. The repository itself carries the permanent memory of
 When starting any new session, do **not** read the entire codebase. Follow this 3-tier loading sequence:
 
 ### Tier 1 — Global Baseline (Every Session)
-1. Read root [GEMINI.md](file:///c:/Users/ern/Documents/Ops_Pilot/GEMINI.md) (Architecture overview & critical constraints).
-2. Read [docs/context/CURRENT_STATE.md](file:///c:/Users/ern/Documents/Ops_Pilot/docs/context/CURRENT_STATE.md) (Current development focus & recent state).
-3. Read [docs/context/SESSION_HANDOFF.md](file:///c:/Users/ern/Documents/Ops_Pilot/docs/context/SESSION_HANDOFF.md) (Last session's notes and exact next step).
+1. Read root [GEMINI.md](GEMINI.md) (Architecture overview & critical constraints).
+2. Read [docs/context/CURRENT_STATE.md](docs/context/CURRENT_STATE.md) (Current development focus & recent state).
+3. Read [docs/context/SESSION_HANDOFF.md](docs/context/SESSION_HANDOFF.md) (Last session's notes and exact next step).
 
 ### Tier 2 — Task-Specific Deep Dive (As Needed)
-- Architecture or integration work → Read [docs/context/ARCHITECTURE.md](file:///c:/Users/ern/Documents/Ops_Pilot/docs/context/ARCHITECTURE.md) & [docs/context/DECISIONS.md](file:///c:/Users/ern/Documents/Ops_Pilot/docs/context/DECISIONS.md).
-- User workflow, RBAC, or business logic → Read [docs/context/PRODUCT.md](file:///c:/Users/ern/Documents/Ops_Pilot/docs/context/PRODUCT.md).
-- Debugging, performance, or known quirks → Read [docs/context/KNOWN_ISSUES.md](file:///c:/Users/ern/Documents/Ops_Pilot/docs/context/KNOWN_ISSUES.md).
+- Architecture or integration work → Read [docs/context/ARCHITECTURE.md](docs/context/ARCHITECTURE.md) & [docs/context/DECISIONS.md](docs/context/DECISIONS.md).
+- User workflow, RBAC, or business logic → Read [docs/context/PRODUCT.md](docs/context/PRODUCT.md).
+- Debugging, performance, or known quirks → Read [docs/context/KNOWN_ISSUES.md](docs/context/KNOWN_ISSUES.md).
 
 ### Tier 3 — Source Code Inspection
 Only after reading the relevant memory documents, inspect the specific source files needed for the task.

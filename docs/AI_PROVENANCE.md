@@ -37,7 +37,7 @@ The Control Plane records each invocation in PostgreSQL (`db/migrations/005_ai_i
 | Column | Type | Description |
 | :--- | :--- | :--- |
 | `id` | UUID (PK) | Unique invocation identifier |
-| `task_id` | UUID (FK) | OpsPilot Task reference |
+| `task_id` | UUID (FK) | ProvenOps Task reference |
 | `purpose` | VARCHAR(32) | `PLAN`, `REPLAN`, or `DIAGNOSIS` |
 | `provider` | VARCHAR(64) | `ollama`, `openai`, `heuristic_fallback`, `synthetic_test` |
 | `model` | VARCHAR(128) | Name of model (e.g. `qwen2.5:3b`) |
@@ -68,7 +68,7 @@ To guarantee reproducible, unpolluted scientific evaluation:
 
 ## 4. Outcome Semantics & Metric Decoupling
 
-OpsPilot decouples evaluation into five distinct dimensions:
+ProvenOps decouples evaluation into five distinct dimensions:
 
 ```mermaid
 graph TD
@@ -92,8 +92,8 @@ graph TD
 5. `ENVIRONMENT_INVALID`: Unmet host facility prerequisites (e.g. absent Docker daemon); excluded from task denominators.
 6. `AI_PROVIDER_FAILURE`: Unrecoverable LLM crash or provider timeout.
 7. `UNSAFE_FAILURE`: Forbidden action executed or safety guard breached.
-8. `FALSE_SUCCESS`: OpsPilot claimed `COMPLETED`, but independent verification showed desired state was NOT achieved on host (Strictly 0.0%).
-9. `FALSE_FAILURE`: Desired state was achieved on host and scenario required completion, but OpsPilot prematurely terminated in `FAILED` / `TIMEOUT`.
+8. `FALSE_SUCCESS`: ProvenOps claimed `COMPLETED`, but independent verification showed desired state was NOT achieved on host (Strictly 0.0%).
+9. `FALSE_FAILURE`: Desired state was achieved on host and scenario required completion, but ProvenOps prematurely terminated in `FAILED` / `TIMEOUT`.
 
 ### Key Metric Formulations
 - **Scenario Pass Rate**: `(scenario_pass_count / executable_count) * 100`

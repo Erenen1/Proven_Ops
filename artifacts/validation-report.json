@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-17T16:19:57.015349+00:00",
+  "timestamp": "2026-09-17T16:33:07.057598+00:00",
   "summary": {
     "total": 15,
     "verified": 15,
@@ -13,11 +13,11 @@
       "name": "verification_contract",
       "claim": "Independent deterministic verification enforced (EXECUTED != VERIFIED); failure evidence recorded in DB",
       "result": "VERIFIED",
-      "duration_sec": 1.683,
-      "timestamp": "2026-09-17T16:19:17.054337+00:00",
+      "duration_sec": 2.09,
+      "timestamp": "2026-09-17T16:32:23.250296+00:00",
       "evidence": {
         "go_unit_verification": "Anchored contract tests executed and passed",
-        "task_id": "cbd58493-042f-458b-984c-a6f9b59c9446",
+        "task_id": "f615219e-cb95-434c-b533-834c6881508a",
         "db_verification_row": "f|tcp_port_open|59123"
       },
       "failure_reason": null
@@ -26,8 +26,8 @@
       "name": "canary_blast_radius_halting",
       "claim": "Canary failure halts rollout; node-02..node-05 verified 100% untouched on disk",
       "result": "VERIFIED",
-      "duration_sec": 2.119,
-      "timestamp": "2026-09-17T16:19:19.172933+00:00",
+      "duration_sec": 2.149,
+      "timestamp": "2026-09-17T16:32:25.399609+00:00",
       "evidence": {
         "go_test_canary_halt": "TestExecuteRolloutCanaryHaltOnFailure executed and passed",
         "canary_mutated": "provenops-node-01",
@@ -44,8 +44,8 @@
       "name": "rolling_deployment_batch_enforcement",
       "claim": "Rolling deployment enforces sequential batch progression and failure thresholds",
       "result": "VERIFIED",
-      "duration_sec": 1.08,
-      "timestamp": "2026-09-17T16:19:20.252970+00:00",
+      "duration_sec": 1.158,
+      "timestamp": "2026-09-17T16:32:26.557198+00:00",
       "evidence": {
         "rolling_tests": "TestExecuteRolloutSuccess and TestComputeBatches executed and passed"
       },
@@ -55,8 +55,8 @@
       "name": "saga_lifo_rollback_compensation",
       "claim": "Real host file mutated, failed downstream step triggered compensation, original content and hash 100% restored",
       "result": "VERIFIED",
-      "duration_sec": 1.788,
-      "timestamp": "2026-09-17T16:19:22.041279+00:00",
+      "duration_sec": 1.92,
+      "timestamp": "2026-09-17T16:32:28.476841+00:00",
       "evidence": {
         "go_saga_tests": "TestSagaLIFOCompensation and TestSagaIrreversibleActionHandling executed and passed",
         "mutated_content": "SAGA_MUTATED_CONTENT_V2",
@@ -70,8 +70,8 @@
       "name": "dag_orchestration_and_cycle_rejection",
       "claim": "DAG cycle detection rejects circular graphs upfront; failure propagation marks dependents as BLOCKED_BY_DEPENDENCY",
       "result": "VERIFIED",
-      "duration_sec": 1.216,
-      "timestamp": "2026-09-17T16:19:23.257426+00:00",
+      "duration_sec": 1.668,
+      "timestamp": "2026-09-17T16:32:30.144871+00:00",
       "evidence": {
         "dag_tests": "TestDAGCycleDetection, TestDAGFailurePropagation, TestDAGValidationAndBatches executed and passed"
       },
@@ -81,11 +81,11 @@
       "name": "retry_engine_and_timeout_enforcement",
       "claim": "Transient failures retried with jitter backoff; policy/mutations fail-fast; process timeout terminates execution (<3s)",
       "result": "VERIFIED",
-      "duration_sec": 2.98,
-      "timestamp": "2026-09-17T16:19:26.237517+00:00",
+      "duration_sec": 3.75,
+      "timestamp": "2026-09-17T16:32:33.894662+00:00",
       "evidence": {
         "go_retry_tests": "Classification and non-retryable tests executed and passed",
-        "timeout_duration_sec": 2.16,
+        "timeout_duration_sec": 2.2,
         "timeout_rc": 124
       },
       "failure_reason": null
@@ -94,8 +94,8 @@
       "name": "remediation_budget_enforcement",
       "claim": "Remediation budget exhausted halts loop and transitions task to MANUAL_INTERVENTION_REQUIRED",
       "result": "VERIFIED",
-      "duration_sec": 0.782,
-      "timestamp": "2026-09-17T16:19:27.019461+00:00",
+      "duration_sec": 2.765,
+      "timestamp": "2026-09-17T16:32:36.659536+00:00",
       "evidence": {
         "go_remediation_test": "TestFailureInjection_RemediationBudget executed and passed"
       },
@@ -105,8 +105,8 @@
       "name": "control_plane_restart_active_execution",
       "claim": "Control Plane restart during active execution recovers state; completed steps preserved without duplication",
       "result": "VERIFIED",
-      "duration_sec": 9.087,
-      "timestamp": "2026-09-17T16:19:36.106524+00:00",
+      "duration_sec": 9.442,
+      "timestamp": "2026-09-17T16:32:46.101130+00:00",
       "evidence": {
         "readyz_rebounded": true,
         "task_status": "COMPLETED",
@@ -119,8 +119,8 @@
       "name": "agent_kill_ledger_reconciliation",
       "claim": "Agent killed mid-execution; bbolt ledger reconciles RUNNING to UNKNOWN; blocks blind duplicate execution",
       "result": "VERIFIED",
-      "duration_sec": 7.458,
-      "timestamp": "2026-09-17T16:19:43.564662+00:00",
+      "duration_sec": 7.409,
+      "timestamp": "2026-09-17T16:32:53.510535+00:00",
       "evidence": {
         "ledger_file_exists": true,
         "node02_reconnected": true,
@@ -132,8 +132,8 @@
       "name": "network_partition_resilience",
       "claim": "Network partition handled cleanly; agent reconnects automatically via persistent mTLS without state corruption",
       "result": "VERIFIED",
-      "duration_sec": 6.511,
-      "timestamp": "2026-09-17T16:19:50.075799+00:00",
+      "duration_sec": 6.507,
+      "timestamp": "2026-09-17T16:33:00.018020+00:00",
       "evidence": {
         "node03_status": "online"
       },
@@ -143,10 +143,10 @@
       "name": "revoked_certificate_handshake_rejection",
       "claim": "New mTLS handshake with revoked client certificate strictly rejected at TLS level with SSL bad certificate alert",
       "result": "VERIFIED",
-      "duration_sec": 0.94,
-      "timestamp": "2026-09-17T16:19:51.015793+00:00",
+      "duration_sec": 1.022,
+      "timestamp": "2026-09-17T16:33:01.040483+00:00",
       "evidence": {
-        "cert_serial_hex": "4183D3E0E0A315C4998A261AE8434BE2",
+        "cert_serial_hex": "2E49E7817A672F5D2D603E96A9198F62",
         "handshake_before_revocation": "SUCCESS (TLSv1.3)",
         "revoke_api_status": 200,
         "handshake_rejected": true,
@@ -159,8 +159,8 @@
       "name": "command_guard_pipeline_blocking",
       "claim": "Destructive commands (rm -rf /, curl|sh, traversal) blocked before execution; host unharmed",
       "result": "VERIFIED",
-      "duration_sec": 1.503,
-      "timestamp": "2026-09-17T16:19:52.518538+00:00",
+      "duration_sec": 1.511,
+      "timestamp": "2026-09-17T16:33:02.551693+00:00",
       "evidence": {
         "go_guard_test": "TestCommandGuard executed and passed",
         "payloads_tested": [
@@ -177,12 +177,12 @@
       "name": "secret_redaction_in_logs_and_audit",
       "claim": "Credentials, JWT signatures, and AWS tokens are automatically redacted in DB and SSE; raw secrets never stored",
       "result": "VERIFIED",
-      "duration_sec": 0.978,
-      "timestamp": "2026-09-17T16:19:53.496444+00:00",
+      "duration_sec": 0.971,
+      "timestamp": "2026-09-17T16:33:03.522282+00:00",
       "evidence": {
         "go_redaction_tests": "TestRedactString and TestRedactMap executed and passed",
-        "task_id": "b18701e9-40b4-4986-b52a-cb02b2a5a8a1",
-        "audit_query_result": "{\"prompt\": \"connect to postgres://opspilot:[REDACTED]@localhost:5432/db with token Bearer [REDACTED_JWT]\", \"targets\": [\"agent-node-01\"], \"idempotency_key\": \"\"}\n{\"model\": \"qwen2.5:3b\", \"purpose\": \"PLAN\", \"provider\": \"heuristic_fallback\", \"latency_ms\": 21, \"model_digest\": \"\", \"fallback_used\": true, \"invocation_id\": \"017746e0-2ba6-466c-9a20-e334f466c839\", \"fallback_reason\": \"All connection attempts failed\"}",
+        "task_id": "233ebc51-ef9e-4fbf-b698-8139adb54b83",
+        "audit_query_result": "{\"prompt\": \"connect to postgres://opspilot:[REDACTED]@localhost:5432/db with token Bearer [REDACTED_JWT]\", \"targets\": [\"agent-node-01\"], \"idempotency_key\": \"\"}\n{\"model\": \"qwen2.5:3b\", \"purpose\": \"PLAN\", \"provider\": \"heuristic_fallback\", \"latency_ms\": 19, \"model_digest\": \"\", \"fallback_used\": true, \"invocation_id\": \"5108afa6-57a3-430f-90e2-dbc0a62b4270\", \"fallback_reason\": \"All connection attempts failed\"}",
         "raw_password_leaked_in_db": false,
         "raw_jwt_leaked_in_db": false
       },
@@ -192,8 +192,8 @@
       "name": "docker_network_isolation",
       "claim": "Agent containers can ONLY reach Control Plane mTLS (9090); PostgreSQL (5432) & AI Service (8000) strictly isolated",
       "result": "VERIFIED",
-      "duration_sec": 2.926,
-      "timestamp": "2026-09-17T16:19:56.422418+00:00",
+      "duration_sec": 3.01,
+      "timestamp": "2026-09-17T16:33:06.532245+00:00",
       "evidence": {
         "agent_to_postgres": "BLOCKED",
         "agent_to_ai": "BLOCKED",
@@ -205,8 +205,8 @@
       "name": "go_race_detector_concurrency",
       "claim": "Go race detector (-race) passes with 0 data races across state machine, PKI, Saga, verification, and fleet",
       "result": "VERIFIED",
-      "duration_sec": 0.593,
-      "timestamp": "2026-09-17T16:19:57.015281+00:00",
+      "duration_sec": 0.525,
+      "timestamp": "2026-09-17T16:33:07.057545+00:00",
       "evidence": {
         "race_detector_output": "ok  \topspilot/control-plane/internal/statemachine\t(cached)\nok  \topspilot/control-plane/internal/pki\t(cached)\nok  \topspilot/control-plane/internal/saga\t(cached)\nok  \topspilot/control-plane/internal/verification\t(cached)\nok  \topspilot/control-plane/internal/fleet\t(cached)"
       },

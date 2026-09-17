@@ -23,5 +23,5 @@ This document tracks project-level technical debt, known operational limitations
 
 ### Issue 4: Docker-in-Docker CI Integration
 - **Severity**: Low (CI Enhancement)
-- **Current State**: CI runs unit tests for Go, Python, and TypeScript. Running the live systemd test container (`infra/dev/Dockerfile.ubuntu-node`) in GitHub Actions requires privileged Docker runners (`--privileged`).
-- **Workaround**: Real systemd target verification is performed locally or on dedicated staging VMs.
+- **Current State**: CI runs unit tests for Go, Python, and TypeScript. Running the live multi-node agent lab (`agent/Dockerfile`) in GitHub Actions requires privileged Docker runners (`--privileged`).
+- **Workaround**: Real multi-node verification is performed via `make validate-production` locally or on dedicated staging VMs.

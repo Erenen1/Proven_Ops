@@ -1,8 +1,8 @@
-# OpsPilot Product & Business Logic Specification
+# ProvenOps Product & Business Logic Specification
 
 ## 1. Product Mission & Purpose
 
-OpsPilot transforms natural-language infrastructure intentions (e.g. *"Install nginx on server X and expose it on port 8080"*) into planned, policy-controlled, verifiable operations on managed Linux hosts.
+ProvenOps transforms natural-language infrastructure intentions (e.g. *"Install nginx on server X and expose it on port 8080"*) into planned, policy-controlled, verifiable operations on managed Linux hosts.
 
 The primary product thesis: **Infrastructure administration requires strict safety boundaries, human sign-off on risky mutations, and deterministic state verification.**
 

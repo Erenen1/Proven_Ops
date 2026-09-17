@@ -1,8 +1,8 @@
-# Contributing to OpsPilot
+# Contributing to ProvenOps
 
-Thank you for your interest in contributing to **OpsPilot**! 
+Thank you for your interest in contributing to **ProvenOps**! 
 
-OpsPilot is an open-source, policy-controlled AI infrastructure operations platform. Because this platform interacts directly with server administration, security and architectural integrity are our highest priorities.
+ProvenOps is an open-source, policy-controlled AI infrastructure operations platform. Because this platform interacts directly with server administration, security and architectural integrity are our highest priorities.
 
 We follow a lightweight **GitHub Flow / Trunk-Based Development** approach. This document outlines our branch strategy, commit conventions, pull request workflows, and security requirements.
 
@@ -152,13 +152,13 @@ If a credential is accidentally committed:
 
 ## 6. Keeping Documentation in Sync
 
-OpsPilot maintains architectural living memory documents in `docs/context/`:
+ProvenOps maintains architectural living memory documents in `docs/context/`:
 - [docs/context/ARCHITECTURE.md](docs/context/ARCHITECTURE.md)
 - [docs/context/PRODUCT.md](docs/context/PRODUCT.md)
 - [docs/context/DECISIONS.md](docs/context/DECISIONS.md)
 - [docs/context/CURRENT_STATE.md](docs/context/CURRENT_STATE.md)
 - [docs/context/SESSION_HANDOFF.md](docs/context/SESSION_HANDOFF.md)
-- [docs/SECURITY.md](docs/SECURITY.md)
+- [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)
 
 If your PR alters service boundaries, contracts, security assumptions, or design decisions, **you must update the relevant documentation in the same PR**. Do not leave outdated documentation behind.
 

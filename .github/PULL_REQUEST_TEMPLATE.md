@@ -14,5 +14,5 @@
 - [ ] Code builds successfully across all affected packages (`make build` or package builds)
 - [ ] Relevant automated tests pass (`make test` or `go test` / `pytest` / `npm test`)
 - [ ] No secrets, credentials, tokens, or private keys are committed
-- [ ] Architecture / project documentation updated if necessary (`PROJECT_CONTEXT.md`, `docs/`)
+- [ ] Architecture / project documentation updated if necessary (`README.md`, `docs/`)
 - [ ] Security implications and least-privilege principles were reviewed
