@@ -22,7 +22,14 @@ dist/
 *.so
 *.dylib
 /bin/opspilot-agent
+/bin/provenops-agent
 /bin/control-plane
+
+# Temporary / Scratch runtime directories
+scratch/
+tmp/
+.gotmp/
+artifacts/runtime/
 
 # Go
 apps/control-plane/bin/
@@ -76,6 +83,7 @@ htmlcov/
 *.sqlite3
 pgdata/
 opspilot_pgdata/
+provenops_pgdata/
 
 # OS and Editor Artifacts
 .DS_Store

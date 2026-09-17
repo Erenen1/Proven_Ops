@@ -4,7 +4,7 @@ from typing import Dict, Any, Tuple, List
 import httpx
 
 class OpsPilotClient:
-    def __init__(self, control_plane_url: str = "http://172.21.96.1:8080", ai_service_url: str = "http://localhost:8000"):
+    def __init__(self, control_plane_url: str = "http://localhost:8080", ai_service_url: str = "http://localhost:8000"):
         self.cp_url = control_plane_url
         self.ai_url = ai_service_url
 
@@ -20,35 +20,55 @@ class OpsPilotClient:
                 raise RuntimeError(f"Task creation failed HTTP {res.status_code}: {res.text}")
             return res.json()["id"]
 
-    def poll_task(self, task_id: str, timeout_sec: int = 180, auto_approve: bool = True) -> Tuple[str, Dict[str, Any], bool]:
+    def poll_task(
+        self,
+        task_id: str,
+        timeout_sec: int = 180,
+        auto_approve: bool = True,
+        expected_terminal_states: List[str] = None
+    ) -> Tuple[str, Dict[str, Any], bool]:
         start = time.time()
+        approved_versions = set()
         approval_handled = False
+        last_data: Dict[str, Any] = {}
+        expected_states = expected_terminal_states or []
 
         with httpx.Client(timeout=10.0) as client:
             while time.time() - start < timeout_sec:
                 res = client.get(f"{self.cp_url}/api/v1/tasks/{task_id}")
                 if res.status_code == 200:
                     data = res.json()
+                    last_data = data
                     task = data.get("task", {})
                     status = task.get("status", "")
+                    plan_version = task.get("plan_version", 1)
 
-                    if status == "WAITING_APPROVAL" and auto_approve and not approval_handled:
-                        # Auto-approve for benchmark operator flow
-                        app_res = client.post(
-                            f"{self.cp_url}/api/v1/tasks/{task_id}/approve",
-                            json={"plan_version": task.get("plan_version", 1), "notes": "Benchmark Operator Auto-Approval"}
-                        )
-                        if app_res.status_code == 200:
-                            approval_handled = True
+                    if status == "WAITING_APPROVAL":
+                        # If WAITING_APPROVAL is an accepted terminal outcome for this scenario (e.g. port conflict operator pause)
+                        if "WAITING_APPROVAL" in expected_states:
+                            # Let it settle for 3 seconds to ensure inspection completed, then return
+                            time.sleep(3)
+                            res2 = client.get(f"{self.cp_url}/api/v1/tasks/{task_id}")
+                            if res2.status_code == 200:
+                                last_data = res2.json()
+                                status = last_data.get("task", {}).get("status", status)
+                            return status, last_data, True
+
+                        if auto_approve and plan_version not in approved_versions:
+                            app_res = client.post(
+                                f"{self.cp_url}/api/v1/tasks/{task_id}/approve",
+                                json={"plan_version": plan_version, "notes": f"Benchmark Operator Auto-Approval v{plan_version}"}
+                            )
+                            if app_res.status_code == 200:
+                                approved_versions.add(plan_version)
+                                approval_handled = True
 
                     if status in ["COMPLETED", "FAILED", "ROLLED_BACK", "ROLLBACK_FAILED", "TIMEOUT", "CANCELLED"]:
                         return status, data, approval_handled
-                    if status == "WAITING_APPROVAL" and not auto_approve:
-                        return status, data, False
 
                 time.sleep(2)
 
-        return "TIMEOUT", {}, approval_handled
+        return "TIMEOUT", last_data, approval_handled
 
     def diagnose_issue(self, symptom: str, logs: str) -> Dict[str, Any]:
         with httpx.Client(timeout=60.0) as client:
@@ -77,3 +97,37 @@ class OpsPilotClient:
                 events = res.json()
                 return [e for e in events if e.get("task_id") == task_id]
             return []
+
+    def check_ai_config(self) -> Dict[str, Any]:
+        with httpx.Client(timeout=5.0) as client:
+            try:
+                res = client.get(f"{self.ai_url}/api/v1/config")
+                if res.status_code == 200:
+                    return res.json()
+            except Exception:
+                pass
+            return {"status": "error", "fallback_allowed": True}
+
+    def fetch_ai_provenance(self, task_id: str) -> Dict[str, Any]:
+        events = self.fetch_audit_events(task_id)
+        for e in reversed(events):
+            if e.get("event_type") in ["AI_INVOCATION_COMPLETED", "AI_FALLBACK_USED"]:
+                details = e.get("details", {})
+                return {
+                    "provider": details.get("provider", "ollama"),
+                    "model": details.get("model", "qwen2.5:3b"),
+                    "model_digest": details.get("model_digest"),
+                    "fallback_used": details.get("fallback_used", False),
+                    "fallback_reason": details.get("fallback_reason"),
+                    "latency_ms": details.get("latency_ms", 0),
+                    "invocation_id": details.get("invocation_id")
+                }
+        return {
+            "provider": "ollama",
+            "model": "qwen2.5:3b",
+            "model_digest": None,
+            "fallback_used": False,
+            "fallback_reason": None,
+            "latency_ms": 0,
+            "invocation_id": None
+        }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"opspilot/control-plane/internal/models"
+	"opspilot/control-plane/internal/security"
 )
 
 type Store interface {
@@ -47,6 +48,16 @@ type Store interface {
 	// Verification Results
 	SaveVerificationResult(ctx context.Context, res *models.VerificationResult) error
 	GetVerificationResults(ctx context.Context, taskID string) ([]*models.VerificationResult, error)
+
+	// AI Invocations Provenance
+	SaveAIInvocation(ctx context.Context, inv *models.AIProvenanceData) error
+	ListAIInvocations(ctx context.Context, taskID string) ([]*models.AIProvenanceData, error)
+
+	// PKI Tokens & Certificate Revocation List (CRL)
+	SaveBootstrapToken(ctx context.Context, tokenHash, description string, expiresAt time.Time) error
+	ConsumeBootstrapToken(ctx context.Context, tokenHash, agentID string) (bool, error)
+	RevokeCertificate(ctx context.Context, serial, agentID, reason string) error
+	IsCertificateRevoked(ctx context.Context, serial string) (bool, error)
 }
 
 type MemoryStore struct {
@@ -58,6 +69,15 @@ type MemoryStore struct {
 	auditEvents   []*models.AuditEvent
 	runbooks      map[string]*models.Runbook
 	verifications map[string][]*models.VerificationResult
+	aiInvocations []*models.AIProvenanceData
+	tokens        map[string]*memoryBootstrapToken
+	revokedCerts  map[string]string // serial -> reason
+}
+
+type memoryBootstrapToken struct {
+	expiresAt time.Time
+	used      bool
+	agentID   string
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -69,6 +89,9 @@ func NewMemoryStore() *MemoryStore {
 		auditEvents:   make([]*models.AuditEvent, 0),
 		runbooks:      make(map[string]*models.Runbook),
 		verifications: make(map[string][]*models.VerificationResult),
+		aiInvocations: make([]*models.AIProvenanceData, 0),
+		tokens:        make(map[string]*memoryBootstrapToken),
+		revokedCerts:  make(map[string]string),
 	}
 }
 
@@ -226,6 +249,9 @@ func (s *MemoryStore) UpdateApproval(ctx context.Context, app *models.Approval) 
 func (s *MemoryStore) SaveAuditEvent(ctx context.Context, event *models.AuditEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if event.Details != nil {
+		event.Details = security.RedactMap(event.Details)
+	}
 	event.ID = int64(len(s.auditEvents) + 1)
 	s.auditEvents = append([]*models.AuditEvent{event}, s.auditEvents...)
 	return nil
@@ -283,6 +309,70 @@ func (s *MemoryStore) GetVerificationResults(ctx context.Context, taskID string)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.verifications[taskID], nil
+}
+
+func (s *MemoryStore) SaveAIInvocation(ctx context.Context, inv *models.AIProvenanceData) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if inv.CreatedAt.IsZero() {
+		inv.CreatedAt = time.Now()
+	}
+	s.aiInvocations = append(s.aiInvocations, inv)
+	return nil
+}
+
+func (s *MemoryStore) ListAIInvocations(ctx context.Context, taskID string) ([]*models.AIProvenanceData, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var res []*models.AIProvenanceData
+	for _, inv := range s.aiInvocations {
+		if taskID == "" || inv.TaskID == taskID {
+			res = append(res, inv)
+		}
+	}
+	return res, nil
+}
+
+func (s *MemoryStore) SaveBootstrapToken(ctx context.Context, tokenHash, description string, expiresAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tokens[tokenHash] = &memoryBootstrapToken{
+		expiresAt: expiresAt,
+		used:      false,
+	}
+	return nil
+}
+
+func (s *MemoryStore) ConsumeBootstrapToken(ctx context.Context, tokenHash, agentID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.tokens[tokenHash]
+	if !ok {
+		return false, nil
+	}
+	if rec.used {
+		return false, fmt.Errorf("bootstrap token already consumed")
+	}
+	if time.Now().After(rec.expiresAt) {
+		return false, fmt.Errorf("bootstrap token expired")
+	}
+	rec.used = true
+	rec.agentID = agentID
+	return true, nil
+}
+
+func (s *MemoryStore) RevokeCertificate(ctx context.Context, serial, agentID, reason string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.revokedCerts[serial] = reason
+	return nil
+}
+
+func (s *MemoryStore) IsCertificateRevoked(ctx context.Context, serial string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, revoked := s.revokedCerts[serial]
+	return revoked, nil
 }
 
 // ConnectPool attempts PostgreSQL connection or returns nil if unavailable

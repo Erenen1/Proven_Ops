@@ -1,6 +1,6 @@
-# OpsPilot — AI Project Entry Point
+# ProvenOps — AI Project Entry Point
 
-OpsPilot is a policy-controlled AI infrastructure operations platform that converts natural-language sysadmin intent into planned, policy-filtered, auditable, and deterministically verified operations on Linux hosts (Ubuntu 22.04/24.04).
+ProvenOps is a policy-controlled AI infrastructure operations platform that converts natural-language sysadmin intent into planned, policy-filtered, auditable, and deterministically verified operations on Linux hosts (Ubuntu 22.04/24.04).
 
 ---
 

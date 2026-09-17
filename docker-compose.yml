@@ -1,19 +1,25 @@
-version: '3.8'
+name: provenops
 
 services:
+  # ===========================================================================
+  # CORE SERVICES (Database, Control Plane, AI Service, Dashboard)
+  # ===========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: opspilot-postgres
+    container_name: provenops-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: opspilot
       POSTGRES_PASSWORD: opspilot_dev_secret
       POSTGRES_DB: opspilot
-    ports:
-      - "5432:5432"
     volumes:
-      - opspilot_pgdata:/var/lib/postgresql/data
+      - provenops_pgdata:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      backend-net:
+        aliases:
+          - postgres
+          - opspilot-postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U opspilot -d opspilot"]
       interval: 5s
@@ -24,18 +30,44 @@ services:
     build:
       context: .
       dockerfile: apps/control-plane/Dockerfile
-    container_name: opspilot-control-plane
+    container_name: provenops-control-plane
     restart: unless-stopped
     environment:
+      PROVENOPS_DATABASE_URL: postgres://opspilot:opspilot_dev_secret@postgres:5432/opspilot?sslmode=disable
       DATABASE_URL: postgres://opspilot:opspilot_dev_secret@postgres:5432/opspilot?sslmode=disable
+      PROVENOPS_HTTP_PORT: "8080"
       CONTROL_PLANE_HTTP_PORT: "8080"
+      PROVENOPS_GRPC_PORT: "9090"
       CONTROL_PLANE_GRPC_PORT: "9090"
+      PROVENOPS_JWT_SECRET: super_secret_jwt_signing_key_change_in_production_min_32_bytes
       JWT_SECRET: super_secret_jwt_signing_key_change_in_production_min_32_bytes
-      BOOTSTRAP_TOKEN: opspilot-default-bootstrap-token-2026
+      PROVENOPS_BOOTSTRAP_TOKEN: provenops-default-bootstrap-token-2026
+      BOOTSTRAP_TOKEN: provenops-default-bootstrap-token-2026
+      PROVENOPS_AI_SERVICE_URL: http://ai-service:8000
       AI_SERVICE_URL: http://ai-service:8000
+      PROVENOPS_TLS_ENABLED: "true"
+      TLS_ENABLED: "true"
+      PROVENOPS_TLS_CA_CERT: /etc/provenops/certs/ca.crt
+      TLS_CA_CERT: /etc/provenops/certs/ca.crt
+      PROVENOPS_TLS_SERVER_CERT: /etc/provenops/certs/server.crt
+      TLS_SERVER_CERT: /etc/provenops/certs/server.crt
+      PROVENOPS_TLS_SERVER_KEY: /etc/provenops/certs/server.key
+      TLS_SERVER_KEY: /etc/provenops/certs/server.key
+    volumes:
+      - controlplane_certs:/etc/provenops/certs
     ports:
       - "8080:8080"
       - "9090:9090"
+    networks:
+      frontend-net:
+      backend-net:
+        aliases:
+          - control-plane
+          - opspilot-control-plane
+      agent-net:
+        aliases:
+          - control-plane
+          - opspilot-control-plane
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,25 +76,191 @@ services:
     build:
       context: apps/ai-service
       dockerfile: Dockerfile
-    container_name: opspilot-ai-service
+    container_name: provenops-ai-service
     restart: unless-stopped
     environment:
       PORT: "8000"
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       DEFAULT_LLM_MODEL: qwen2.5:3b
+      ENABLE_HEURISTIC_FALLBACK: "true"
     ports:
       - "8000:8000"
+    networks:
+      backend-net:
+        aliases:
+          - ai-service
+          - opspilot-ai-service
 
   dashboard:
     build:
       context: apps/dashboard
       dockerfile: Dockerfile
-    container_name: opspilot-dashboard
+    container_name: provenops-dashboard
     restart: unless-stopped
     ports:
       - "3000:80"
+    networks:
+      - frontend-net
     depends_on:
       - control-plane
 
+  # ===========================================================================
+  # LAB NODES (Multi-Node Linux Lab Simulation: node-01 to node-05)
+  # Activate via: docker compose --profile lab up --build
+  # ===========================================================================
+  node-01:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: provenops-node-01
+    hostname: node-01
+    restart: unless-stopped
+    environment:
+      PROVENOPS_HOSTNAME: node-01
+      PROVENOPS_CONTROL_PLANE_ADDR: control-plane:9090
+      PROVENOPS_BOOTSTRAP_TOKEN: token-node-01
+      PROVENOPS_ENVIRONMENT: lab
+      PROVENOPS_TLS_ENABLED: "true"
+      PROVENOPS_TLS_SERVER_NAME: control-plane
+      PROVENOPS_TLS_CA_CERT: /etc/provenops/certs/ca.crt
+      PROVENOPS_TLS_CLIENT_CERT: /etc/provenops/certs/client.crt
+      PROVENOPS_TLS_CLIENT_KEY: /etc/provenops/certs/client.key
+      OPSPILOT_HOSTNAME: node-01
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: token-node-01
+    volumes:
+      - node01_certs:/etc/provenops/certs
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-02:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: provenops-node-02
+    hostname: node-02
+    restart: unless-stopped
+    environment:
+      PROVENOPS_HOSTNAME: node-02
+      PROVENOPS_CONTROL_PLANE_ADDR: control-plane:9090
+      PROVENOPS_BOOTSTRAP_TOKEN: token-node-02
+      PROVENOPS_ENVIRONMENT: lab
+      PROVENOPS_TLS_ENABLED: "true"
+      PROVENOPS_TLS_SERVER_NAME: control-plane
+      PROVENOPS_TLS_CA_CERT: /etc/provenops/certs/ca.crt
+      PROVENOPS_TLS_CLIENT_CERT: /etc/provenops/certs/client.crt
+      PROVENOPS_TLS_CLIENT_KEY: /etc/provenops/certs/client.key
+      OPSPILOT_HOSTNAME: node-02
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: token-node-02
+    volumes:
+      - node02_certs:/etc/provenops/certs
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-03:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: provenops-node-03
+    hostname: node-03
+    restart: unless-stopped
+    environment:
+      PROVENOPS_HOSTNAME: node-03
+      PROVENOPS_CONTROL_PLANE_ADDR: control-plane:9090
+      PROVENOPS_BOOTSTRAP_TOKEN: token-node-03
+      PROVENOPS_ENVIRONMENT: lab
+      PROVENOPS_TLS_ENABLED: "true"
+      PROVENOPS_TLS_SERVER_NAME: control-plane
+      PROVENOPS_TLS_CA_CERT: /etc/provenops/certs/ca.crt
+      PROVENOPS_TLS_CLIENT_CERT: /etc/provenops/certs/client.crt
+      PROVENOPS_TLS_CLIENT_KEY: /etc/provenops/certs/client.key
+      OPSPILOT_HOSTNAME: node-03
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: token-node-03
+    volumes:
+      - node03_certs:/etc/provenops/certs
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-04:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: provenops-node-04
+    hostname: node-04
+    restart: unless-stopped
+    environment:
+      PROVENOPS_HOSTNAME: node-04
+      PROVENOPS_CONTROL_PLANE_ADDR: control-plane:9090
+      PROVENOPS_BOOTSTRAP_TOKEN: token-node-04
+      PROVENOPS_ENVIRONMENT: lab
+      PROVENOPS_TLS_ENABLED: "true"
+      PROVENOPS_TLS_SERVER_NAME: control-plane
+      PROVENOPS_TLS_CA_CERT: /etc/provenops/certs/ca.crt
+      PROVENOPS_TLS_CLIENT_CERT: /etc/provenops/certs/client.crt
+      PROVENOPS_TLS_CLIENT_KEY: /etc/provenops/certs/client.key
+      OPSPILOT_HOSTNAME: node-04
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: token-node-04
+    volumes:
+      - node04_certs:/etc/provenops/certs
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+  node-05:
+    profiles: ["lab"]
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    container_name: provenops-node-05
+    hostname: node-05
+    restart: unless-stopped
+    environment:
+      PROVENOPS_HOSTNAME: node-05
+      PROVENOPS_CONTROL_PLANE_ADDR: control-plane:9090
+      PROVENOPS_BOOTSTRAP_TOKEN: token-node-05
+      PROVENOPS_ENVIRONMENT: lab
+      PROVENOPS_TLS_ENABLED: "true"
+      PROVENOPS_TLS_SERVER_NAME: control-plane
+      PROVENOPS_TLS_CA_CERT: /etc/provenops/certs/ca.crt
+      PROVENOPS_TLS_CLIENT_CERT: /etc/provenops/certs/client.crt
+      PROVENOPS_TLS_CLIENT_KEY: /etc/provenops/certs/client.key
+      OPSPILOT_HOSTNAME: node-05
+      OPSPILOT_CONTROL_PLANE_ADDR: control-plane:9090
+      OPSPILOT_BOOTSTRAP_TOKEN: token-node-05
+    volumes:
+      - node05_certs:/etc/provenops/certs
+    networks:
+      - agent-net
+    depends_on:
+      - control-plane
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+  agent-net:
+    driver: bridge
+
 volumes:
-  opspilot_pgdata:
+  provenops_pgdata:
+  controlplane_certs:
+  node01_certs:
+  node02_certs:
+  node03_certs:
+  node04_certs:
+  node05_certs:

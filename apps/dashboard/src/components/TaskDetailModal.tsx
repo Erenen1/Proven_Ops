@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Task, VerificationResult } from '../types';
 import { fetchTaskDetail, approveTask, rejectTask, createRunbook } from '../api';
 import { 
@@ -10,13 +10,25 @@ import {
   ChevronDown, 
   ChevronRight, 
   ShieldAlert,
-  BookmarkPlus
+  BookmarkPlus,
+  Radio,
+  Trash2,
+  Network,
+  Copy
 } from 'lucide-react';
 
 interface TaskDetailModalProps {
   task: Task;
   onClose: () => void;
   onTaskUpdated: () => void;
+}
+
+interface LogEntry {
+  id: string;
+  timestamp: string;
+  step_id: string;
+  stream_type: 'stdout' | 'stderr' | 'info';
+  data: string;
 }
 
 export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task: initialTask, onClose, onTaskUpdated }) => {
@@ -26,12 +38,45 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task: initialT
   const [approvalNotes, setApprovalNotes] = useState('');
   const [isProcessingApproval, setIsProcessingApproval] = useState(false);
   const [runbookSaved, setRunbookSaved] = useState(false);
+  const [streamLogs, setStreamLogs] = useState<LogEntry[]>([]);
+  const [terminalFilter, setTerminalFilter] = useState<'all' | 'stdout' | 'stderr'>('all');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
 
   const loadData = async () => {
     try {
       const data = await fetchTaskDetail(task.id);
       setTask(data.task);
       setVerifications(data.verifications || []);
+
+      // If logs are empty, initialize from completed steps
+      setStreamLogs((prev) => {
+        if (prev.length > 0) return prev;
+        const initialLogs: LogEntry[] = [];
+        if (data.task && data.task.steps) {
+          data.task.steps.forEach((step) => {
+            if (step.stdout) {
+              initialLogs.push({
+                id: `${step.id}-stdout`,
+                timestamp: new Date().toLocaleTimeString(),
+                step_id: step.id,
+                stream_type: 'stdout',
+                data: step.stdout,
+              });
+            }
+            if (step.stderr) {
+              initialLogs.push({
+                id: `${step.id}-stderr`,
+                timestamp: new Date().toLocaleTimeString(),
+                step_id: step.id,
+                stream_type: 'stderr',
+                data: step.stderr,
+              });
+            }
+          });
+        }
+        return initialLogs;
+      });
     } catch (err) {
       console.error('Failed to load task details:', err);
     }
@@ -43,11 +88,41 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task: initialT
 
     const eventSource = new EventSource(`/api/v1/tasks/${task.id}/events`);
 
-    eventSource.addEventListener('STEP_OUTPUT', () => {
+    eventSource.addEventListener('STEP_OUTPUT', (e: MessageEvent) => {
+      try {
+        const ev = JSON.parse(e.data);
+        const payload = ev.payload || ev;
+        if (payload && payload.data) {
+          setStreamLogs((prev) => [
+            ...prev,
+            {
+              id: `${Date.now()}-${Math.random()}`,
+              timestamp: new Date().toLocaleTimeString(),
+              step_id: payload.step_id || '',
+              stream_type: (payload.stream_type as any) || 'stdout',
+              data: payload.data,
+            },
+          ]);
+        }
+      } catch (_) {}
       loadData();
     });
 
-    eventSource.addEventListener('STEP_COMPLETED', () => {
+    eventSource.addEventListener('STEP_COMPLETED', (e: MessageEvent) => {
+      try {
+        const ev = JSON.parse(e.data);
+        const payload = ev.payload || ev;
+        setStreamLogs((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-${Math.random()}`,
+            timestamp: new Date().toLocaleTimeString(),
+            step_id: payload.step_id || '',
+            stream_type: 'info',
+            data: `[Step ${payload.step_id || ''} finished: exit_code=${payload.exit_code}, success=${payload.success}]`,
+          },
+        ]);
+      } catch (_) {}
       loadData();
       onTaskUpdated();
     });
@@ -69,6 +144,12 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task: initialT
       clearInterval(interval);
     };
   }, [task.id]);
+
+  useEffect(() => {
+    if (autoScroll && terminalEndRef.current) {
+      terminalEndRef.current.scrollTop = terminalEndRef.current.scrollHeight;
+    }
+  }, [streamLogs, autoScroll]);
 
   const handleApprove = async () => {
     setIsProcessingApproval(true);
@@ -159,7 +240,22 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task: initialT
                   {task.status}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-mono mt-0.5">ID: {task.id}</p>
+              <div className="flex items-center space-x-3 text-xs text-slate-400 font-mono mt-0.5">
+                <span>ID: {task.id}</span>
+                {task.trace_id && (
+                  <span className="flex items-center space-x-1 px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30 text-[10px]">
+                    <Network className="w-2.5 h-2.5 text-purple-400" />
+                    <span>Trace: {task.trace_id.slice(0, 8)}...{task.trace_id.slice(-6)}</span>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(task.trace_id!)}
+                      title="Copy W3C Trace ID"
+                      className="hover:text-white transition-colors"
+                    >
+                      <Copy className="w-2.5 h-2.5 ml-0.5" />
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -345,6 +441,110 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task: initialT
                 Generating plan...
               </div>
             )}
+          </div>
+
+          {/* Live Streaming Terminal & Console Output */}
+          <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Terminal className="w-4 h-4 text-blue-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Live Streaming Terminal
+                </h4>
+                <span className="flex items-center space-x-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  <Radio className="w-2.5 h-2.5 animate-pulse" />
+                  <span>SSE Live</span>
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-2 text-xs">
+                {/* Filter Tabs */}
+                <div className="flex bg-slate-900 rounded p-0.5 border border-slate-800 font-mono text-[10px]">
+                  <button
+                    onClick={() => setTerminalFilter('all')}
+                    className={`px-2 py-0.5 rounded ${terminalFilter === 'all' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setTerminalFilter('stdout')}
+                    className={`px-2 py-0.5 rounded ${terminalFilter === 'stdout' ? 'bg-slate-800 text-emerald-400 font-bold' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    stdout
+                  </button>
+                  <button
+                    onClick={() => setTerminalFilter('stderr')}
+                    className={`px-2 py-0.5 rounded ${terminalFilter === 'stderr' ? 'bg-slate-800 text-red-400 font-bold' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    stderr
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  className={`px-2 py-1 rounded text-[10px] font-mono border ${
+                    autoScroll ? 'bg-blue-600/20 text-blue-400 border-blue-500/30' : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  Auto-Scroll: {autoScroll ? 'ON' : 'OFF'}
+                </button>
+
+                <button
+                  onClick={() => setStreamLogs([])}
+                  title="Clear Console"
+                  className="p-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-red-400 border border-slate-800 transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+
+            {/* Terminal Window */}
+            <div
+              ref={terminalEndRef}
+              className="bg-black/90 rounded-lg p-3 font-mono text-[11px] leading-relaxed border border-slate-800/80 max-h-72 overflow-y-auto space-y-1 select-text"
+            >
+              {streamLogs.filter(
+                (log) => terminalFilter === 'all' || log.stream_type === terminalFilter || log.stream_type === 'info'
+              ).length === 0 ? (
+                <div className="text-slate-600 italic py-4 text-center">
+                  Waiting for task output stream...
+                </div>
+              ) : (
+                streamLogs
+                  .filter((log) => terminalFilter === 'all' || log.stream_type === terminalFilter || log.stream_type === 'info')
+                  .map((log, index) => (
+                    <div key={log.id || index} className="flex items-start space-x-2 font-mono">
+                      <span className="text-slate-600 text-[10px] select-none shrink-0">{log.timestamp}</span>
+                      {log.step_id && (
+                        <span className="text-blue-400 text-[10px] select-none shrink-0 font-bold">[{log.step_id}]</span>
+                      )}
+                      <span
+                        className={`text-[9px] px-1 rounded uppercase select-none shrink-0 ${
+                          log.stream_type === 'stdout'
+                            ? 'bg-emerald-950 text-emerald-400'
+                            : log.stream_type === 'stderr'
+                            ? 'bg-red-950 text-red-400'
+                            : 'bg-blue-950 text-blue-400'
+                        }`}
+                      >
+                        {log.stream_type}
+                      </span>
+                      <span
+                        className={`flex-1 whitespace-pre-wrap break-all ${
+                          log.stream_type === 'stdout'
+                            ? 'text-emerald-300/90'
+                            : log.stream_type === 'stderr'
+                            ? 'text-red-300/90'
+                            : 'text-blue-300 italic'
+                        }`}
+                      >
+                        {log.data}
+                      </span>
+                    </div>
+                  ))
+              )}
+            </div>
           </div>
 
           {/* Deterministic Verification Suite Results */}

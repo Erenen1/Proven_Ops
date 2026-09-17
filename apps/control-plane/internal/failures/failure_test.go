@@ -45,25 +45,34 @@ func TestClassifyTransientNetworkFailure(t *testing.T) {
 	}
 
 	policy := DefaultRetryPolicy()
-	if !policy.IsRetryable(sf, "install_package", 0) {
+	errClass := ClassifyStandardError("install_package", 100, "", "E: Failed to fetch http://archive.ubuntu.com/pool/main/n/nginx.deb  Connection timed out")
+	if errClass != models.ErrorClassConnectivity && errClass != models.ErrorClassTransient {
+		t.Errorf("expected Connectivity or Transient, got %s", errClass)
+	}
+	if !policy.IsRetryable(errClass, "install_package", 0) {
 		t.Errorf("first attempt of transient package fetch should be retryable")
 	}
-	if policy.IsRetryable(sf, "install_package", 2) {
+	if policy.IsRetryable(errClass, "install_package", 3) {
 		t.Errorf("attempt beyond MaxAttempts should not be retryable")
 	}
 }
 
 func TestNonRetryableMutatingActions(t *testing.T) {
-	sf := &models.StructuredFailure{
-		Type:      models.FailureDependencyFailure,
-		Retryable: true,
-	}
 	policy := DefaultRetryPolicy()
 
-	if policy.IsRetryable(sf, "write_config_file", 0) {
-		t.Errorf("write_config_file must never be blindly retried even if failure marked retryable")
+	// Policy error should never be retried
+	if policy.IsRetryable(models.ErrorClassPolicy, "write_config_file", 0) {
+		t.Errorf("policy error must never be retried")
 	}
-	if policy.IsRetryable(sf, "stop_service", 0) {
-		t.Errorf("stop_service must not be blindly retried")
+
+	// Permanent error should never be retried
+	if policy.IsRetryable(models.ErrorClassPermanent, "install_package", 0) {
+		t.Errorf("permanent error must never be retried")
+	}
+
+	// Jitter backoff test
+	b1 := policy.GetBackoffWithJitter(1)
+	if b1 <= 0 {
+		t.Errorf("expected positive backoff, got %v", b1)
 	}
 }

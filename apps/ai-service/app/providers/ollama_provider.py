@@ -1,17 +1,53 @@
 import json
 import os
 import re
+import time
+import uuid
 import httpx
-from typing import Dict, Any
+from typing import Dict, Any, Tuple, Optional
 from .base import LLMProvider
+from ..models.schemas import ProvenanceMetadata
+from ..services.diagnosis_grounding import extract_evidence_and_root_cause, generate_grounded_remediation
 
 class OllamaProvider(LLMProvider):
     def __init__(self, base_url: str, model_name: str, timeout: float = 60.0):
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.timeout = timeout
+        self._model_digest: Optional[str] = None
+
+    async def get_model_digest(self) -> Optional[str]:
+        if self._model_digest:
+            return self._model_digest
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                res = await client.get(f"{self.base_url}/api/tags")
+                if res.status_code == 200:
+                    data = res.json()
+                    for m in data.get("models", []):
+                        if m.get("name") == self.model_name or m.get("model") == self.model_name:
+                            self._model_digest = m.get("digest")
+                            return self._model_digest
+        except Exception:
+            pass
+        return None
 
     async def generate_json(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
+        data, _ = await self.generate_json_with_provenance(system_prompt, user_prompt)
+        return data
+
+    async def generate_json_with_provenance(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        purpose: str = "PLAN",
+        task_id: Optional[str] = None,
+        scenario_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        span_id: Optional[str] = None
+    ) -> Tuple[Dict[str, Any], ProvenanceMetadata]:
+        invocation_id = str(uuid.uuid4())
+        start_time = time.time()
         url = f"{self.base_url}/api/chat"
         payload = {
             "model": self.model_name,
@@ -26,6 +62,7 @@ class OllamaProvider(LLMProvider):
             }
         }
 
+        digest = await self.get_model_digest()
         allow_fallback = os.getenv("ENABLE_HEURISTIC_FALLBACK", "false").lower() in ("true", "1")
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -33,15 +70,49 @@ class OllamaProvider(LLMProvider):
                 if res.status_code == 200:
                     data = res.json()
                     content = data.get("message", {}).get("content", "")
-                    return self._clean_and_parse_json(content)
+                    parsed = self._clean_and_parse_json(content)
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    prov = ProvenanceMetadata(
+                        invocation_id=invocation_id,
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        task_id=task_id,
+                        scenario_id=scenario_id,
+                        purpose=purpose,
+                        provider="ollama",
+                        model=self.model_name,
+                        model_digest=digest,
+                        fallback_used=False,
+                        latency_ms=latency_ms,
+                        schema_valid=True
+                    )
+                    return parsed, prov
                 elif not allow_fallback:
                     raise RuntimeError(f"Ollama returned HTTP {res.status_code}: {res.text}")
         except Exception as e:
             if not allow_fallback:
                 raise RuntimeError(f"Ollama planning failure: {e}") from e
-            pass
+            fallback_err = str(e)
 
-        return self._heuristic_fallback(user_prompt)
+        # Fallback used
+        latency_ms = int((time.time() - start_time) * 1000)
+        fallback_data = self._heuristic_fallback(user_prompt, purpose=purpose)
+        prov = ProvenanceMetadata(
+            invocation_id=invocation_id,
+            trace_id=trace_id,
+            span_id=span_id,
+            task_id=task_id,
+            scenario_id=scenario_id,
+            purpose=purpose,
+            provider="heuristic_fallback",
+            model=self.model_name,
+            model_digest=digest,
+            fallback_used=True,
+            fallback_reason=fallback_err if 'fallback_err' in locals() else "HTTP non-200 or connection error",
+            latency_ms=latency_ms,
+            schema_valid=True
+        )
+        return fallback_data, prov
 
     def _clean_and_parse_json(self, text: str) -> Dict[str, Any]:
         text = text.strip()
@@ -55,8 +126,63 @@ class OllamaProvider(LLMProvider):
             text = text[start:end]
         return json.loads(text)
 
-    def _heuristic_fallback(self, prompt: str) -> Dict[str, Any]:
+    def _heuristic_fallback(self, prompt: str, purpose: str = "PLAN") -> Dict[str, Any]:
         prompt_lower = prompt.lower()
+
+        # 1. Diagnosis Fallback
+        if purpose == "DIAGNOSIS" or "diagnosis request" in prompt_lower:
+            symptom = ""
+            if 'reported symptom: "' in prompt_lower:
+                try:
+                    symptom = prompt.split('Reported Symptom: "')[1].split('"')[0]
+                except Exception:
+                    pass
+            cause, confidence, evidences = extract_evidence_and_root_cause(symptom, prompt)
+            remediation = generate_grounded_remediation(cause, symptom)
+            return {
+                "identified_problem": f"Detected {cause.value} from system observations and logs",
+                "root_cause": cause.value,
+                "confidence": confidence,
+                "evidence": [e.model_dump() for e in evidences],
+                "remediation_steps": remediation
+            }
+
+        # 2. Replan Fallback
+        if purpose == "REPLAN" or "replanning request" in prompt_lower:
+            # Handle port conflict without violating user intent
+            if "already in use" in prompt_lower or "port" in prompt_lower:
+                return {
+                    "goal": "Diagnose conflicting port occupation and observe system state",
+                    "reasoning": "Detected port collision or socket binding failure. Inspecting active listeners before safe operator deferral.",
+                    "steps": [
+                        {
+                            "id": "replan-step-1",
+                            "action": "execute_command",
+                            "arguments": {"command": "ss -tulpn"},
+                            "reason": "Identify active listeners and processes bound to conflicting port",
+                            "suggested_risk": "READ_ONLY",
+                            "verification_strategy": None
+                        }
+                    ],
+                    "overall_verification": []
+                }
+            return {
+                "goal": "Safely inspect failure state",
+                "reasoning": "Previous operational step encountered a failure. Gathering diagnostic logs without mutating system state.",
+                "steps": [
+                    {
+                        "id": "replan-step-1",
+                        "action": "get_system_info",
+                        "arguments": {},
+                        "reason": "Assess host health and system load",
+                        "suggested_risk": "READ_ONLY",
+                        "verification_strategy": None
+                    }
+                ],
+                "overall_verification": []
+            }
+
+        # 3. Plan Fallback
         if "nginx" in prompt_lower and ("8080" in prompt_lower or "port" in prompt_lower):
             return {
                 "goal": "Install and configure Nginx on custom port 8080 and verify",
@@ -207,3 +333,4 @@ class OllamaProvider(LLMProvider):
             ],
             "overall_verification": []
         }
+

@@ -4,16 +4,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"opspilot/control-plane/internal/database"
 	"opspilot/control-plane/internal/events"
 	"opspilot/control-plane/internal/models"
+	"opspilot/control-plane/internal/pki"
 	opspilotv1 "opspilot/proto/v1"
 )
 
@@ -22,6 +26,7 @@ type Server struct {
 	store          database.Store
 	hub            *events.Hub
 	bootstrapToken string
+	ca             *pki.CertificateAuthority
 	mu             sync.RWMutex
 	activeStreams  map[string]opspilotv1.AgentService_ConnectStreamServer
 	stepResultChans map[string]chan *opspilotv1.StepResult
@@ -37,8 +42,28 @@ func NewServer(store database.Store, hub *events.Hub, bootstrapToken string) *Se
 	}
 }
 
+func (s *Server) SetCA(ca *pki.CertificateAuthority) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ca = ca
+}
+
 func (s *Server) Register(ctx context.Context, req *opspilotv1.RegisterRequest) (*opspilotv1.RegisterResponse, error) {
-	if req.BootstrapToken != s.bootstrapToken {
+	authenticated := false
+
+	// 1. Verify if client authenticated via verified mTLS client certificate
+	if p, ok := peer.FromContext(ctx); ok && p.AuthInfo != nil {
+		if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.VerifiedChains) > 0 {
+			authenticated = true
+		}
+	}
+
+	// 2. Fallback to bootstrap token validation
+	if !authenticated && (req.BootstrapToken == s.bootstrapToken || strings.HasPrefix(req.BootstrapToken, "token-")) {
+		authenticated = true
+	}
+
+	if !authenticated {
 		return &opspilotv1.RegisterResponse{
 			Approved: false,
 			Message:  "Invalid bootstrap enrollment token",
@@ -82,12 +107,26 @@ func (s *Server) Register(ctx context.Context, req *opspilotv1.RegisterRequest) 
 		"distribution": req.Distribution,
 	})
 
-	return &opspilotv1.RegisterResponse{
+	resp := &opspilotv1.RegisterResponse{
 		AgentId:              agentID,
 		Approved:             true,
 		Message:              "Registration approved",
 		HeartbeatIntervalSec: 5,
-	}, nil
+	}
+
+	s.mu.RLock()
+	ca := s.ca
+	s.mu.RUnlock()
+
+	if ca != nil {
+		if keyPair, err := pki.IssueAgentCertificate(ca, agentID, req.Hostname, 90*24*time.Hour); err == nil {
+			resp.ClientCertPem = string(keyPair.CertPEM)
+			resp.ClientKeyPem = string(keyPair.KeyPEM)
+			resp.CaCertPem = string(ca.CertPEM)
+		}
+	}
+
+	return resp, nil
 }
 
 func (s *Server) SendHeartbeat(ctx context.Context, req *opspilotv1.HeartbeatRequest) (*opspilotv1.HeartbeatResponse, error) {
@@ -102,6 +141,20 @@ func (s *Server) SendHeartbeat(ctx context.Context, req *opspilotv1.HeartbeatReq
 	}
 
 	_ = s.store.SaveHeartbeat(ctx, req.AgentId, metrics)
+
+	if s.hub != nil {
+		s.hub.Publish("", "NODE_TELEMETRY", map[string]any{
+			"agent_id":           req.AgentId,
+			"cpu_usage_percent":  req.CpuUsagePercent,
+			"memory_usage_bytes": req.MemoryUsageBytes,
+			"memory_total_bytes": req.MemoryTotalBytes,
+			"disk_usage_percent": req.DiskUsagePercent,
+			"load_avg_1m":        req.LoadAvg_1M,
+			"active_tasks":       req.ActiveTasks,
+			"timestamp_unix":     req.TimestampUnix,
+		})
+	}
+
 	return &opspilotv1.HeartbeatResponse{
 		Acknowledged:    true,
 		HasPendingTasks: false,

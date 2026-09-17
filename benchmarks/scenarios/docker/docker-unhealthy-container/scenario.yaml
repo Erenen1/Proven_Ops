@@ -15,3 +15,6 @@ expected_terminal_state:
 - COMPLETED
 timeout_seconds: 120
 synthetic_ai_failure_test: false
+requirements:
+- docker
+- docker_daemon_running

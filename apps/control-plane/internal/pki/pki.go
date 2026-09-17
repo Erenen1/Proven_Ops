@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -76,6 +77,43 @@ func GenerateCA(commonName string) (*CertificateAuthority, error) {
 		Cert:    parsedCert,
 		CertPEM: certPEM,
 		Key:     priv,
+		KeyPEM:  keyPEM,
+	}, nil
+}
+
+// LoadCA loads an existing CA cert and private key from files
+func LoadCA(certPath, keyPath string) (*CertificateAuthority, error) {
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA cert file: %w", err)
+	}
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA key file: %w", err)
+	}
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode CA cert PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA cert: %w", err)
+	}
+
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return nil, fmt.Errorf("failed to decode CA key PEM")
+	}
+	privKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA key: %w", err)
+	}
+
+	return &CertificateAuthority{
+		Cert:    cert,
+		CertPEM: certPEM,
+		Key:     privKey,
 		KeyPEM:  keyPEM,
 	}, nil
 }
@@ -189,8 +227,8 @@ func SavePEM(path string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(path, data, perm)
 }
 
-// ServerTLSConfig creates a TLS config enforcing mutual TLS
-func ServerTLSConfig(caPEM, serverCertPEM, serverKeyPEM []byte) (*tls.Config, error) {
+// ServerTLSConfig creates a TLS config enforcing mutual TLS with optional CRL checking
+func ServerTLSConfig(caPEM, serverCertPEM, serverKeyPEM []byte, checker RevocationChecker) (*tls.Config, error) {
 	serverCert, err := tls.X509KeyPair(serverCertPEM, serverKeyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server key pair: %w", err)
@@ -201,12 +239,30 @@ func ServerTLSConfig(caPEM, serverCertPEM, serverKeyPEM []byte) (*tls.Config, er
 		return nil, fmt.Errorf("failed to parse CA certificate PEM")
 	}
 
-	return &tls.Config{
+	cfg := &tls.Config{
 		Certificates: []tls.Certificate{serverCert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		MinVersion:   tls.VersionTLS13,
-	}, nil
+	}
+
+	if checker != nil {
+		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+				return nil
+			}
+			peerCert := verifiedChains[0][0]
+			serialDec := peerCert.SerialNumber.String()
+			serialHexUpper := strings.ToUpper(peerCert.SerialNumber.Text(16))
+			serialHexLower := strings.ToLower(peerCert.SerialNumber.Text(16))
+			if checker.IsRevoked(serialDec) || checker.IsRevoked(serialHexUpper) || checker.IsRevoked(serialHexLower) {
+				return fmt.Errorf("client certificate with serial %s is revoked", serialHexUpper)
+			}
+			return nil
+		}
+	}
+
+	return cfg, nil
 }
 
 // ClientTLSConfig creates a TLS config for the Agent to authenticate with the server
@@ -228,3 +284,173 @@ func ClientTLSConfig(caPEM, clientCertPEM, clientKeyPEM []byte, serverName strin
 		MinVersion:   tls.VersionTLS13,
 	}, nil
 }
+
+// LoadCAFromPEM loads a CertificateAuthority from cert and key PEM bytes
+func LoadCAFromPEM(certPEM, keyPEM []byte) (*CertificateAuthority, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("failed to decode CA certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+	}
+
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return nil, fmt.Errorf("failed to decode CA private key PEM")
+	}
+	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		k, err2 := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to parse EC private key: %w", err)
+		}
+		var ok bool
+		key, ok = k.(*ecdsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("CA private key is not ECDSA")
+		}
+	}
+
+	return &CertificateAuthority{
+		Cert:    cert,
+		CertPEM: certPEM,
+		Key:     key,
+		KeyPEM:  keyPEM,
+	}, nil
+}
+
+// IssueAgentCertificate creates a signed client certificate for an agent with specified validity duration
+func IssueAgentCertificate(ca *CertificateAuthority, agentID, hostname string, duration time.Duration) (*KeyPair, error) {
+	if duration <= 0 {
+		duration = 90 * 24 * time.Hour
+	}
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate client key: %w", err)
+	}
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"OpsPilot Fleet Agent"},
+			CommonName:   agentID,
+		},
+		NotBefore:   time.Now().Add(-5 * time.Minute),
+		NotAfter:    time.Now().Add(duration),
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	if hostname != "" {
+		template.DNSNames = append(template.DNSNames, hostname)
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, ca.Cert, &priv.PublicKey, ca.Key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client certificate: %w", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyBytes, _ := x509.MarshalECPrivateKey(priv)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	parsedCert, _ := x509.ParseCertificate(derBytes)
+
+	return &KeyPair{
+		Cert:    parsedCert,
+		CertPEM: certPEM,
+		Key:     priv,
+		KeyPEM:  keyPEM,
+	}, nil
+}
+
+// ValidateCertificate verifies that the certificate was signed by the CA and is currently valid
+func ValidateCertificate(certPEM, caPEM []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("failed to decode certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to parse CA certificate PEM")
+	}
+
+	opts := x509.VerifyOptions{
+		Roots:     caPool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageAny},
+	}
+	if _, err := cert.Verify(opts); err != nil {
+		return nil, fmt.Errorf("certificate verification failed: %w", err)
+	}
+
+	return cert, nil
+}
+
+// RenewAgentCertificate validates the existing certificate and issues a new certificate for the same agent
+func RenewAgentCertificate(ca *CertificateAuthority, existingCertPEM []byte, duration time.Duration) (*KeyPair, error) {
+	cert, err := ValidateCertificate(existingCertPEM, ca.CertPEM)
+	if err != nil {
+		return nil, fmt.Errorf("cannot renew invalid certificate: %w", err)
+	}
+
+	hostname := ""
+	if len(cert.DNSNames) > 0 {
+		hostname = cert.DNSNames[0]
+	}
+
+	return IssueAgentCertificate(ca, cert.Subject.CommonName, hostname, duration)
+}
+
+// RevocationChecker verifies whether a certificate serial is in the CRL
+type RevocationChecker interface {
+	IsRevoked(serialNumber string) bool
+}
+
+// StoreRevocationChecker adapts a database callback to RevocationChecker
+type StoreRevocationChecker struct {
+	IsRevokedFunc func(serial string) (bool, error)
+}
+
+func (s *StoreRevocationChecker) IsRevoked(serial string) bool {
+	if s.IsRevokedFunc == nil {
+		return false
+	}
+	revoked, err := s.IsRevokedFunc(serial)
+	if err != nil {
+		return false
+	}
+	return revoked
+}
+
+// ValidateCertificateWithRevocation checks signature, validity period, and revocation status
+func ValidateCertificateWithRevocation(certPEM, caPEM []byte, checker RevocationChecker) (*x509.Certificate, error) {
+	cert, err := ValidateCertificate(certPEM, caPEM)
+	if err != nil {
+		return nil, err
+	}
+
+	if checker != nil {
+		serialDec := cert.SerialNumber.String()
+		serialHexUpper := strings.ToUpper(cert.SerialNumber.Text(16))
+		serialHexLower := strings.ToLower(cert.SerialNumber.Text(16))
+		if checker.IsRevoked(serialDec) || checker.IsRevoked(serialHexUpper) || checker.IsRevoked(serialHexLower) {
+			return nil, fmt.Errorf("certificate with serial %s is revoked", serialHexUpper)
+		}
+	}
+
+	return cert, nil
+}
+
+

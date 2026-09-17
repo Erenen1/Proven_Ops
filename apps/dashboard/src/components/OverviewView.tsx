@@ -38,7 +38,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 Action Required: {pendingApprovals.length} task(s) awaiting operator approval
               </h4>
               <p className="text-xs text-amber-400/80">
-                OpsPilot policy engine classified changes as Medium/High risk. Review steps before execution.
+                ProvenOps policy engine classified changes as Medium/High risk. Review steps before execution.
               </p>
             </div>
           </div>
@@ -113,7 +113,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <div className="flex items-center justify-between pb-4 border-b border-slate-800">
             <div>
               <h3 className="text-sm font-semibold text-white">Recent Operations</h3>
-              <p className="text-xs text-slate-400">Infrastructure tasks managed by OpsPilot</p>
+              <p className="text-xs text-slate-400">Infrastructure tasks managed by ProvenOps</p>
             </div>
             <button
               onClick={() => onNavigateTab('tasks')}

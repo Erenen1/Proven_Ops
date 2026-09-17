@@ -9,9 +9,17 @@ import (
 )
 
 func TestRunnerStepExecutionIdempotency(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_runner_ledger.db")
+	ledger, err := NewLedger(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create ledger: %v", err)
+	}
+	defer ledger.Close()
+
 	registry := tools.NewRegistry()
 	guard := NewCommandGuard()
-	runner := NewRunner(registry, guard)
+	runner := NewRunnerWithLedger(registry, guard, ledger)
 	ctx := context.Background()
 
 	execID := "task-1/step-1/attempt-1"

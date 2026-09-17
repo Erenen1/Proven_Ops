@@ -1,4 +1,4 @@
-import { Agent, Task, TaskTransition, VerificationResult, Runbook, AuditEvent } from './types';
+import { Agent, Task, TaskTransition, VerificationResult, Runbook, RunbookExecutionResult, AuditEvent } from './types';
 
 const API_BASE = '/api/v1';
 
@@ -80,8 +80,45 @@ export async function createRunbook(payload: {
   return res.json();
 }
 
+export async function dryRunRunbook(
+  id: string,
+  parameters: Record<string, string>
+): Promise<RunbookExecutionResult> {
+  const res = await fetch(`${API_BASE}/runbooks/${encodeURIComponent(id)}/dry-run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parameters }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to simulate runbook');
+  }
+  return res.json();
+}
+
+export async function executeRunbook(
+  id: string,
+  payload: {
+    target_agent_ids?: string[];
+    parameters: Record<string, string>;
+    dry_run?: boolean;
+  }
+): Promise<Task> {
+  const res = await fetch(`${API_BASE}/runbooks/${encodeURIComponent(id)}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to execute runbook');
+  }
+  return res.json();
+}
+
 export async function fetchAudit(limit = 50): Promise<AuditEvent[]> {
   const res = await fetch(`${API_BASE}/audit?limit=${limit}`);
   if (!res.ok) throw new Error('Failed to fetch audit logs');
   return res.json();
 }
+

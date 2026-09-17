@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"opspilot/agent/internal/client"
 	"opspilot/agent/internal/config"
@@ -15,7 +16,7 @@ import (
 )
 
 func main() {
-	log.Println("[OpsPilot Agent] Starting Server Agent daemon...")
+	log.Println("[ProvenOps Agent] Starting Server Agent daemon...")
 
 	cfg := config.Load()
 	collector := discovery.NewCollector()
@@ -32,13 +33,25 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		if err := agentClient.Start(ctx); err != nil {
-			log.Printf("[OpsPilot Agent] Client error: %v", err)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				if err := agentClient.Start(ctx); err != nil {
+					log.Printf("[ProvenOps Agent] Client error: %v. Retrying in 2 seconds...", err)
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(2 * time.Second):
+					}
+				}
+			}
 		}
 	}()
 
 	<-quit
-	log.Println("[OpsPilot Agent] Shutting down agent daemon...")
+	log.Println("[ProvenOps Agent] Shutting down agent daemon...")
 	cancel()
-	log.Println("[OpsPilot Agent] Daemon stopped cleanly.")
+	log.Println("[ProvenOps Agent] Daemon stopped cleanly.")
 }

@@ -30,3 +30,22 @@ class FaultInjector:
             return 124, "", "script execution timed out after 30s"
         except Exception as e:
             return 1, "", str(e)
+
+    @staticmethod
+    def check_prerequisites(requirements: list[str]) -> Tuple[bool, str]:
+        if not requirements:
+            return True, ""
+        for req in requirements:
+            if req in ("docker", "docker_daemon_running"):
+                if os.name != 'nt':
+                    cmd = ["docker", "info"]
+                else:
+                    cmd = ["wsl", "-d", "Ubuntu", "-u", "root", "--", "docker", "info"]
+                try:
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    if res.returncode != 0:
+                        return False, "Prerequisite unmet: Docker daemon not reachable"
+                except Exception as e:
+                    return False, f"Prerequisite unmet: Docker check failed ({e})"
+        return True, ""
+

@@ -15,11 +15,12 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Randomization seed")
     parser.add_argument("--scenarios-dir", type=str, default="benchmarks/scenarios", help="Scenarios root directory")
     parser.add_argument("--results-dir", type=str, default="benchmarks/results", help="Results output directory")
-    default_cp = os.environ.get("CONTROL_PLANE_URL", "http://172.21.96.1:8080" if os.name != "nt" else "http://localhost:8080")
-    default_ai = os.environ.get("AI_SERVICE_URL", "http://172.21.96.1:8000" if os.name != "nt" else "http://localhost:8000")
+    default_cp = os.environ.get("CONTROL_PLANE_URL", "http://localhost:8080")
+    default_ai = os.environ.get("AI_SERVICE_URL", "http://localhost:8000")
 
     parser.add_argument("--control-plane", type=str, default=default_cp, help="Control Plane HTTP URL")
     parser.add_argument("--ai-service", type=str, default=default_ai, help="AI Service HTTP URL")
+    parser.add_argument("--official", action="store_true", help="Enforce official benchmark rules (no fallback, provenance verification)")
 
     args = parser.parse_args()
 
@@ -30,7 +31,8 @@ def main():
         scenarios_dir=args.scenarios_dir,
         results_dir=args.results_dir,
         control_plane_url=args.control_plane,
-        ai_service_url=args.ai_service
+        ai_service_url=args.ai_service,
+        official=args.official
     )
 
     try:

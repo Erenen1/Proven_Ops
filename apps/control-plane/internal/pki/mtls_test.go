@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,7 +57,7 @@ func TestMutualTLS_FullLifecycle(t *testing.T) {
 	}
 
 	// 5. Start gRPC Server enforcing mTLS
-	serverTLS, err := pki.ServerTLSConfig(ca.CertPEM, serverKP.CertPEM, serverKP.KeyPEM)
+	serverTLS, err := pki.ServerTLSConfig(ca.CertPEM, serverKP.CertPEM, serverKP.KeyPEM, nil)
 	if err != nil {
 		t.Fatalf("Failed to build server TLS config: %v", err)
 	}
@@ -161,4 +162,66 @@ func TestMutualTLS_FullLifecycle(t *testing.T) {
 		}
 		t.Logf("PASS: Rogue client certificate successfully rejected by mTLS server: %v", err)
 	})
+
+	// -------------------------------------------------------------
+	// SUBTEST 4: Revoked certificate is rejected by mTLS server
+	// -------------------------------------------------------------
+	t.Run("RevokedCertificate_Rejected", func(t *testing.T) {
+		revokedKP, err := pki.GenerateClientCert(ca, "revoked-agent-01", "revoked-host")
+		if err != nil {
+			t.Fatalf("Failed to generate client cert: %v", err)
+		}
+
+		mockRevChecker := &mockRevocationChecker{
+			revokedSerials: map[string]bool{
+				revokedKP.Cert.SerialNumber.String():                   true,
+				strings.ToUpper(revokedKP.Cert.SerialNumber.Text(16)): true,
+			},
+		}
+
+		revServerTLS, err := pki.ServerTLSConfig(ca.CertPEM, serverKP.CertPEM, serverKP.KeyPEM, mockRevChecker)
+		if err != nil {
+			t.Fatalf("Failed to build server TLS: %v", err)
+		}
+
+		revListener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("Failed to bind: %v", err)
+		}
+		defer revListener.Close()
+
+		revGRPC := grpc.NewServer(grpc.Creds(credentials.NewTLS(revServerTLS)))
+		opspilotv1.RegisterAgentServiceServer(revGRPC, &dummyAgentServiceServer{})
+		go func() { _ = revGRPC.Serve(revListener) }()
+		defer revGRPC.Stop()
+
+		revClientTLS, err := pki.ClientTLSConfig(ca.CertPEM, revokedKP.CertPEM, revokedKP.KeyPEM, "localhost")
+		if err != nil {
+			t.Fatalf("Failed to build client TLS config: %v", err)
+		}
+
+		conn, err := grpc.NewClient(revListener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(revClientTLS)))
+		if err != nil {
+			t.Fatalf("Dial failed: %v", err)
+		}
+		defer conn.Close()
+
+		client := opspilotv1.NewAgentServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		_, err = client.Register(ctx, &opspilotv1.RegisterRequest{Hostname: "revoked-agent"})
+		if err == nil {
+			t.Fatalf("Expected failure when connecting with revoked certificate, but succeeded!")
+		}
+		t.Logf("PASS: Revoked client certificate successfully rejected by mTLS server: %v", err)
+	})
+}
+
+type mockRevocationChecker struct {
+	revokedSerials map[string]bool
+}
+
+func (m *mockRevocationChecker) IsRevoked(serialNumber string) bool {
+	return m.revokedSerials[serialNumber]
 }

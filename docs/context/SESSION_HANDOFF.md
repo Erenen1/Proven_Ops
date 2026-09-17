@@ -1,60 +1,56 @@
-# Session Handoff
+# Session Handoff — ProvenOps
 
-Last Updated: 2026-09-12 22:35
+Last Updated: 2026-09-17
 
 ## Status
-COMPLETE (MILESTONE 3: REAL FAULT INJECTION & BENCHMARK LAB FULLY VALIDATED ON UBUNTU 24.04 LTS UNDER WSL2)
+COMPLETE (PRODUCTION-READY FOR DEFINED SCOPE & RELEASE-HARDENED)
 
 ## Session Goal
-Complete Milestone 3 — Real Fault Injection & Benchmark Lab:
-1. Build a real fault injection benchmark framework on Ubuntu (Ubuntu 24.04 LTS under WSL2).
-2. Implement minimum 20 structured real-infrastructure fault scenarios across Nginx, Systemd, Docker, Filesystem, Permissions, Network, Agent, and AI Failure categories.
-3. Build an Independent Host Evaluator decoupled from agent self-reporting (`systemctl`, `ss`, `curl`, `dpkg`, file states).
-4. Measure and compute all required platform metrics (`TASK_SUCCESS_RATE`, `DIAGNOSIS_ACCURACY`, `RECOVERY_RATE`, `UNSAFE_ACTION_RATE`, `FALSE_SUCCESS_RATE`, `HUMAN_INTERVENTION_RATE`, medians, and durations).
-5. Output structured JSON (`summary.json`), line-delimited traces (`scenarios.jsonl`), and human-readable Markdown reports (`report.md`).
-6. Guarantee environment safety and idempotent cleanup in `finally` blocks.
-7. Support multi-iterations (`--iterations`), model parameterization (`--model`), and comparison CLI (`compare.py`).
-8. Ensure existing happy-path E2E slice remains fully operational without regressions.
+Complete final production hardening for public release, rename OpsPilot to **ProvenOps**, close all production readiness gaps, synchronize documentation with ground-truth code, author a professional GitHub README, run fresh multi-node Docker reproduction tests, and execute a safe commit + push to the remote branch.
 
 ## What Was Done
-1. **Benchmark Directory & Architecture**: Established clean layout in `benchmarks/` with `runner/`, `schemas/`, `scenarios/`, `scripts/`, `results/`, `tests/`, and CLI runners (`run.py`, `compare.py`).
-2. **27 Real Linux Fault Scenarios**:
-   - `nginx/` (4 scenarios: port-conflict, invalid-config, service-stopped, missing-package)
-   - `systemd/` (3 scenarios: service-failed, restart-loop, missing-unit)
-   - `docker/` (5 scenarios: container-crash, restart-loop, port-conflict, missing-image, unhealthy-container)
-   - `filesystem/` (3 scenarios: disk-near-full, oversized-log-file, read-only-filesystem-simulation)
-   - `permissions/` (2 scenarios: config-permission-denied, service-user-permission-error)
-   - `network/` (3 scenarios: dns-resolution-failure, tcp-connection-refused, http-500)
-   - `agent/` (4 scenarios: agent-disconnect-during-task, delayed-agent-response, command-timeout, duplicate-execution-request)
-   - `ai_failure/` (3 scenarios: invalid-json-plan, unsupported-tool, dangerous-command-attempt)
-3. **Independent Host Evaluator**: Checks ground truth directly on the Linux host before running cleanup. Enforces zero self-grading.
-4. **Guaranteed Cleanup & Host Safety**: Automated `cleanup.sh` and `scripts/reset_all.sh` in guaranteed `finally` blocks; zero risk to host root file systems.
-5. **Live Benchmark Run Executed**:
-   - Run ID: `2026-09-12T22-12-42`
-   - Target Model: `qwen2.5:3b`
-   - Total Scenarios: 27
-   - Passed: 20
-   - Failed: 7
-   - Task Success Rate: **74.07%**
-   - Diagnosis Accuracy: **18.52%**
-   - Recovery Rate: **51.85%**
-   - Unsafe Action Rate: **0.0%** (Hard security boundary preserved)
-   - False Success Rate: **7.41%**
-   - Human Intervention Rate: **40.74%**
-   - Median Tool Calls: **1.0**
-   - Median Duration: **37.98s**
-6. **Documentation & Context**:
-   - Created `docs/BENCHMARKING.md`.
-   - Created `PROJECT_CONTEXT.md` and `docs/ROADMAP.md`.
-   - Updated `README.md`, `docs/context/DECISIONS.md`, and `docs/context/CURRENT_STATE.md`.
-7. **Regression Testing**:
-   - Happy path vertical slice ("Install nginx on this server and expose it on port 8080.") verified passing with live HTTP 200 response.
+1. **Repository Audit & Secret Scan**:
+   - Audited git branch (`feat/ai-provenance`), tracked files, and remote `origin`.
+   - Verified no credentials, private keys, or `.env` files are tracked (only `.env.example`).
+   - Hardened `.gitignore`.
 
-## Verification
-- Framework unit tests: `pytest benchmarks/tests/test_benchmark.py` (3/3 PASS)
-- Live scenario execution: 27/27 completed on Ubuntu 24.04 LTS under WSL2
-- Verified output artifacts: `benchmarks/results/2026-09-12T22-12-42/summary.json`, `report.md`, `scenarios.jsonl`
-- Regression slice: `nginx.service` active and port 8080 HTTP 200 OK.
+2. **Canonical Renaming (OpsPilot → ProvenOps)**:
+   - Updated public naming, API metadata, and service descriptions to **ProvenOps**.
+   - Preserved backward compatibility: environment variables evaluate `PROVENOPS_* > OPSPILOT_* > generic`.
+   - Metric prefix updated to `provenops_*` with backward-compatible `opspilot_*` aliases.
+   - Filesystem paths use `/var/lib/provenops` and `/etc/provenops/certs` with transparent backward-compatible symlinks to `/var/lib/opspilot` and `/etc/opspilot/certs`.
+   - Docker container names updated to `provenops-*` with network aliases preserving existing service resolution.
+   - Internal Go module path `opspilot/...` preserved to avoid unnecessary import churn.
 
-## Resume Instructions
-New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`, and proceed directly with implementation tasks.
+3. **Docker & Multi-Node Lab Hardening**:
+   - `agent/Dockerfile`: Builds `/bin/provenops-agent` and creates symlinks for `/usr/local/bin/opspilot-agent`, `/var/lib/provenops`, `/var/log/provenops`.
+   - `apps/ai-service/Dockerfile`: Multi-stage hardening with non-root user `appuser`.
+   - `apps/control-plane/Dockerfile`: Added cert path symlinks and minimal runtime.
+   - `docker-compose.yml`: Fully updated with `name: provenops`, dual-stack environment variables, and network aliases.
+
+4. **Makefile & Developer Workflows**:
+   - Standard targets: `make build`, `make test`, `make test-unit`, `make test-race`, `make lab-up`, `make lab-down`, `make validate-production`, `make clean`.
+   - `.github/workflows/ci.yml`: Added full Go race tests, Python tests, and Dashboard typecheck/build.
+
+5. **Empirical Production Validation (15/15 Claims Verified)**:
+   - Live execution on fresh 5-node cluster confirmed:
+     1. `verification_contract` (VERIFIED)
+     2. `canary_blast_radius_halting` (VERIFIED)
+     3. `rolling_deployment_batch_enforcement` (VERIFIED)
+     4. `saga_lifo_rollback_compensation` (VERIFIED)
+     5. `dag_orchestration_and_cycle_rejection` (VERIFIED)
+     6. `retry_engine_and_timeout_enforcement` (VERIFIED)
+     7. `remediation_budget_enforcement` (VERIFIED)
+     8. `control_plane_restart_active_execution` (VERIFIED)
+     9. `agent_kill_ledger_reconciliation` (VERIFIED)
+     10. `network_partition_resilience` (VERIFIED)
+     11. `revoked_certificate_handshake_rejection` (VERIFIED)
+     12. `command_guard_pipeline_blocking` (VERIFIED)
+     13. `secret_redaction_in_logs_and_audit` (VERIFIED)
+     14. `docker_network_isolation` (VERIFIED)
+     15. `go_race_detector_concurrency` (VERIFIED)
+   - Stored in `artifacts/validation-report.json` and `artifacts/validation-report.md`.
+
+6. **GitHub README & Documentation**:
+   - Rewrote `README.md` to high-grade infrastructure engineering standards with Mermaid architecture, core principles (`EXECUTED != VERIFIED`), capabilities, security model, and quick start.
+   - Synchronized `docs/PRODUCTION_READINESS.md`, `docs/THREAT_MODEL.md`, `docs/FAILURE_MODEL.md`, `GEMINI.md`.

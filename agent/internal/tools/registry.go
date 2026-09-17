@@ -66,6 +66,13 @@ func (r *Registry) registerDefaultTools() {
 	r.Register(NewFileTool("write_config_file"))
 	r.Register(NewFileTool("rollback_config"))
 
+	// Desired-State (Idempotent) Infrastructure Tools
+	r.Register(NewEnsurePackageTool())
+	r.Register(NewEnsureServiceTool())
+	r.Register(NewEnsureFileTool())
+	r.Register(NewEnsureDirectoryTool())
+	r.Register(NewEnsurePortStateTool())
+
 	// Docker Tools
 	for _, action := range []string{
 		"docker_info", "docker_ps", "docker_logs", "docker_inspect",

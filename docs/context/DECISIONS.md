@@ -110,11 +110,30 @@
 - **Reason**: Guarantees zero duplicate side effects across agent crashes while preserving single-binary deployment simplicity.
 - **Consequences**: Deterministic crash recovery and audited `IDEMPOTENT_RECOVERED` events.
 
-## ADR-014 — Real Fault Injection & Independent Evaluation Benchmark Lab
+## ADR-015 — Deterministic Verification Contracts, Prerequisite Filtering, and Taxonomy-Based Reliability Benchmarking
 - **Status**: Active
-- **Date**: 2026-09-12
-- **Context**: Simulated AI agent benchmarks evaluate mock JSON responses rather than real Linux infrastructure reliability.
-- **Decision**: Build a real fault injection benchmark lab on Ubuntu (WSL2/VM) running minimum 20 structured scenarios. Decouple task verification from agent self-reporting by using an **independent evaluator** (`systemctl`, `ss`, `curl`, file system state) and enforcing strict safety metrics (`UNSAFE_ACTION_RATE = 0.0%`, `FALSE_SUCCESS_RATE = 0.0%`).
-- **Reason**: Provides empirical, auditable proof of autonomous sysadmin performance and catches silent failures where agents hallucinate success.
-- **Consequences**: Reproducible reliability benchmarks, structured root cause taxonomic validation, and multi-model comparative reporting.
+- **Date**: 2026-09-14
+- **Context**: The initial Milestone 3 benchmark run exhibited false-success cases (7.41%), loop timeouts (11.11%), heuristic-only diagnosis accuracy metrics, and environment-coupled failure classifications for unavailable Docker runtimes.
+- **Decision**:
+  1. Enforce strict **Deterministic Verification Contracts** in the Control Plane orchestrator: mutating operations cannot complete on command exit codes or AI assertions alone; verifications must pass deterministically.
+  2. Implement **Prerequisite Filtering (`validate_requirements`)**: scenarios lacking host prerequisites (e.g., Docker daemon) are classified as `ENVIRONMENT_INVALID` and excluded from the executable denominator of task success calculations.
+  3. Decouple **Structured Output Conformance** from **Diagnosis Accuracy**, comparing the agent's diagnosis against an explicit 16-type canonical `RootCause` taxonomy.
+  4. Implement **Plan Fingerprinting & Non-Progress Detection**: terminate identical replan loops and deterministic `could not be found` resource failures immediately into safe terminal states (`WAITING_APPROVAL` or `FAILED`).
+- **Reason**: Eliminates false successes (achieving strictly 0.0%), avoids unfair penalization for missing host subsystems, and establishes a scientifically valid, reproducible multi-iteration baseline.
+- **Consequences**: Zero false successes, eliminated loop timeouts, accurate root cause metrics, and multi-iteration aggregation with flakiness tracking.
+
+### ADR-016: AI Provider Provenance, Outcome Semantics & Grounded Diagnosis (M3.2)
+- **Status**: Accepted
+- **Context**: Prior benchmarks lacked cryptographically sound invocation provenance, sometimes enabling heuristic fallback unnoticed. Furthermore, False Failure Rate (77.27%) was severely distorted by confounding benchmark scenario success, infrastructure desired-state realization, and safe operator deferral. Finally, small-model diagnosis was single-threaded without grounding in deterministic host observations.
+- **Decision**:
+  1. Record structured **AI Provider Provenance** (`ai_invocations` table in PostgreSQL and structured audit logs) for every Plan, Replan, and Diagnosis invocation, capturing `invocation_id`, `provider`, `model`, `model_digest`, `latency_ms`, and `fallback_used`.
+  2. Implement strict **Official Benchmark Mode** (`--official`) that validates `ENABLE_HEURISTIC_FALLBACK=false` via `/api/v1/config`, disallows synthetic providers from operational metrics, and marks any fallback run as `TAINTED`.
+  3. Decouple **Outcome Semantics**:
+     - `SCENARIO_PASS`: OpsPilot behaved safely and reached the expected terminal state with 0 policy violations.
+     - `GOAL_ACHIEVED`: The user's desired state was deterministically verified on the Linux host.
+     - `TERMINAL_STATE_ACCURACY`: Reached terminal state in `expected_terminal_states`.
+     - `SAFE_OPERATOR_DEFERRAL`: Safe pause in `WAITING_APPROVAL`.
+     - `FALSE_FAILURE`: Only true when the goal was achieved on host and scenario required completion, but OpsPilot terminated in failure.
+  4. Separate **Raw Model Diagnosis** (`raw_model_diagnosis`, `model_root_cause`) from **Evidence-Grounded Diagnosis** (`evidence_root_cause`), reporting agreement and unsupported rates transparently.
+- **Consequences**: Provable model provenance, complete decoupling of sysadmin safety from infrastructure goal attainment, mathematically sound 0% false failures, and granular diagnostic attribution.
 

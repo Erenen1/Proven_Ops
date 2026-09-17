@@ -40,11 +40,52 @@ class PlanRequest(BaseModel):
     supported_tools: List[str] = Field(default_factory=list)
     untrusted_observations: Optional[List[str]] = Field(default_factory=list, description="Host command outputs and logs, strictly isolated")
 
+class ProvenanceMetadata(BaseModel):
+    invocation_id: str
+    trace_id: Optional[str] = None
+    span_id: Optional[str] = None
+    task_id: Optional[str] = None
+    scenario_id: Optional[str] = None
+    purpose: str = "PLAN"
+    provider: str = "ollama"
+    model: str
+    model_digest: Optional[str] = None
+    fallback_used: bool = False
+    fallback_reason: Optional[str] = None
+    latency_ms: int = 0
+    schema_valid: bool = True
+    error_type: Optional[str] = None
+
 class PlanResponse(BaseModel):
     goal: str
     reasoning: str
     steps: List[StepPlan]
     overall_verification: Optional[List[VerificationRequirement]] = Field(default_factory=list)
+    provenance: Optional[ProvenanceMetadata] = None
+
+class RootCause(str, Enum):
+    PORT_CONFLICT = "PORT_CONFLICT"
+    INVALID_CONFIG = "INVALID_CONFIG"
+    PACKAGE_MISSING = "PACKAGE_MISSING"
+    SERVICE_STOPPED = "SERVICE_STOPPED"
+    SERVICE_CRASH = "SERVICE_CRASH"
+    RESTART_LOOP = "RESTART_LOOP"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    DNS_FAILURE = "DNS_FAILURE"
+    CONNECTION_REFUSED = "CONNECTION_REFUSED"
+    HTTP_APPLICATION_FAILURE = "HTTP_APPLICATION_FAILURE"
+    DISK_PRESSURE = "DISK_PRESSURE"
+    CONTAINER_CRASH = "CONTAINER_CRASH"
+    CONTAINER_RESTART_LOOP = "CONTAINER_RESTART_LOOP"
+    CONTAINER_UNHEALTHY = "CONTAINER_UNHEALTHY"
+    IMAGE_NOT_FOUND = "IMAGE_NOT_FOUND"
+    AGENT_DISCONNECTED = "AGENT_DISCONNECTED"
+    TIMEOUT = "TIMEOUT"
+    UNSUPPORTED_RESOURCE = "UNSUPPORTED_RESOURCE"
+    POLICY_DENIED = "POLICY_DENIED"
+    IDEMPOTENT_SATISFIED = "IDEMPOTENT_SATISFIED"
+    NONE = "NONE"
+    UNKNOWN = "UNKNOWN"
 
 class ReplanRequest(BaseModel):
     task_id: str
@@ -52,10 +93,10 @@ class ReplanRequest(BaseModel):
     host_context: HostContext
     failed_step_id: str
     failed_action: str
-    exit_code: int
-    untrusted_stdout: str
-    untrusted_stderr: str
-    prior_successful_steps: List[StepPlan] = Field(default_factory=list)
+    exit_code: Optional[int] = None
+    untrusted_stdout: Optional[str] = ""
+    untrusted_stderr: Optional[str] = ""
+    prior_successful_steps: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
 
 class DiagnosisRequest(BaseModel):
     task_id: str
@@ -63,8 +104,14 @@ class DiagnosisRequest(BaseModel):
     host_context: HostContext
     untrusted_logs: str
 
+class DiagnosisEvidence(BaseModel):
+    source: str
+    detail: str
+
 class DiagnosisResponse(BaseModel):
     identified_problem: str
     root_cause: str
     confidence: float = Field(..., ge=0.0, le=1.0)
+    evidence: Optional[List[DiagnosisEvidence]] = Field(default_factory=list)
     remediation_steps: List[StepPlan] = Field(default_factory=list)
+    provenance: Optional[ProvenanceMetadata] = None

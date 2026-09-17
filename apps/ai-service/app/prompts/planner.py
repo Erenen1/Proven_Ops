@@ -68,7 +68,8 @@ Respond ONLY with a JSON object conforming to the schema above:
 """
 
 def build_replanning_prompt(req: ReplanRequest) -> str:
-    prior_steps_json = json.dumps([s.model_dump() for s in req.prior_successful_steps], indent=2)
+    prior_steps = [s.model_dump() if hasattr(s, "model_dump") else s for s in (req.prior_successful_steps or [])]
+    prior_steps_json = json.dumps(prior_steps, indent=2)
     return f"""### REPLANNING REQUEST
 A previous step in the execution plan failed.
 
@@ -120,20 +121,51 @@ Reported Symptom: "{req.symptom}"
 </UNTRUSTED_OBSERVATION>
 
 Analyze the untrusted logs and symptoms. Provide a structured diagnosis and suggested remediation steps.
+The "root_cause" MUST be selected from one of these canonical categories:
+- PORT_CONFLICT: "Address already in use", port occupied, bind failure
+- INVALID_CONFIG: "syntax error", directive not allowed, configuration test failed, nginx -t error
+- PACKAGE_MISSING: package not installed, dpkg error, command not found for standard package
+- SERVICE_STOPPED: systemd service is inactive (dead), stopped, or failed to start
+- SERVICE_CRASH: service crashed, core dumped, terminated by fatal signal (SIGSEGV)
+- RESTART_LOOP: unit continuously restarting, start-limit-hit
+- PERMISSION_DENIED: permission denied, operation not permitted, read-only filesystem
+- DNS_FAILURE: name or service not known, NXDOMAIN, host resolution failure
+- CONNECTION_REFUSED: connection refused on target port, service daemon not listening
+- HTTP_APPLICATION_FAILURE: HTTP 500/502/503 status code response from application
+- DISK_PRESSURE: no space left on device, filesystem full, inode exhaustion
+- CONTAINER_CRASH: docker container exited unexpectedly or OOMKilled
+- CONTAINER_RESTART_LOOP: container crash looping
+- CONTAINER_UNHEALTHY: container healthcheck failing
+- IMAGE_NOT_FOUND: docker pull image not found or repository unavailable
+- AGENT_DISCONNECTED: agent transport closed, heartbeat timeout
+- TIMEOUT: execution deadline exceeded, verification timeout
+- UNSUPPORTED_RESOURCE: unit could not be found, missing-unit, non-existent service/resource
+- POLICY_DENIED: action forbidden by policy or RBAC security guardrail
+- IDEMPOTENT_SATISFIED: target condition already met, nothing to do
+- NONE: no error or anomaly detected
+- UNKNOWN: root cause cannot be determined from available logs
+
 Respond ONLY with a JSON object conforming to:
 {{
   "identified_problem": "Summary of the fault",
-  "root_cause": "Detailed technical root cause",
+  "root_cause": "PORT_CONFLICT",
   "confidence": 0.95,
+  "evidence": [
+    {{
+      "source": "evidence_log_analysis",
+      "detail": "Observed port conflict: address already in use"
+    }}
+  ],
   "remediation_steps": [
     {{
       "id": "step-1",
-      "action": "action_name",
-      "arguments": {{}},
-      "reason": "Remediation rationale",
-      "suggested_risk": "MEDIUM",
+      "action": "execute_command",
+      "arguments": {{"command": "ss -tulpn"}},
+      "reason": "Identify process occupying port",
+      "suggested_risk": "READ_ONLY",
       "verification_strategy": null
     }}
   ]
 }}
 """
+

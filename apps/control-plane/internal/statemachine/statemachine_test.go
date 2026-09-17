@@ -129,3 +129,78 @@ func TestReplanningAndAgentDisconnectTransitions(t *testing.T) {
 		t.Fatalf("expected transition to ROLLBACK_FAILED: %v", err)
 	}
 }
+
+func TestProduction16StateLifecycle(t *testing.T) {
+	sm := NewMachine()
+	task := &models.Task{
+		ID:                    "task-prod-16",
+		Status:                models.TaskStatusPending,
+		OptimisticLockVersion: 1,
+	}
+
+	// 1. PENDING -> PRECHECKING
+	_, err := sm.Transition(task, models.TaskStatusPrechecking, "Prechecking desired state", "system")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if task.OptimisticLockVersion != 2 {
+		t.Errorf("expected version 2, got %d", task.OptimisticLockVersion)
+	}
+
+	// 2. PRECHECKING -> SKIPPED (Idempotent already satisfied)
+	taskCopy := *task
+	_, err = sm.Transition(&taskCopy, models.TaskStatusSkipped, "Already satisfied", "system")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(&taskCopy, models.TaskStatusSucceeded, "Completed without mutations", "system")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 3. Normal path: PRECHECKING -> WAITING_APPROVAL -> QUEUED -> DISPATCHED -> RUNNING
+	_, err = sm.Transition(task, models.TaskStatusWaitingApproval, "Needs approval", "system")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(task, models.TaskStatusQueued, "Approved", "operator")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(task, models.TaskStatusDispatched, "Assigned to worker", "orchestrator")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(task, models.TaskStatusRunning, "Agent execution started", "agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 4. RUNNING -> RETRYING -> RUNNING -> VERIFYING -> COMPENSATING -> COMPENSATED
+	_, err = sm.Transition(task, models.TaskStatusRetrying, "Transient failure retry", "system")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(task, models.TaskStatusRunning, "Retry execution", "orchestrator")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(task, models.TaskStatusVerifying, "Verifying postconditions", "verifier")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(task, models.TaskStatusCompensating, "Verification failed, rolling back", "saga")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = sm.Transition(task, models.TaskStatusCompensated, "Rollback fully succeeded", "saga")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 5. Invalid resurrection from COMPENSATED
+	_, err = sm.Transition(task, models.TaskStatusRunning, "Invalid rerun", "system")
+	if err == nil {
+		t.Fatalf("expected error resurrecting terminal compensated task, got nil")
+	}
+}
