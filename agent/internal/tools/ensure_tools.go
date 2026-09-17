@@ -51,9 +51,25 @@ func ValidateFilesystemPath(path string) (string, error) {
 	// Forbid dangerous system targets
 	forbiddenRoots := []string{"/proc", "/sys", "/dev", "/boot", "/root/.ssh", "/etc/shadow", "/etc/sudoers"}
 	for _, f := range forbiddenRoots {
-		if clean == f || strings.HasPrefix(clean, f+"/") {
+		if clean == f || strings.HasPrefix(clean, f+"/") || strings.HasPrefix(clean, f+`\`) {
 			return "", fmt.Errorf("modification of protected system path is forbidden: %s", clean)
 		}
+	}
+
+	// Enforce allowed prefixes
+	tempDir := filepath.Clean(os.TempDir())
+	allowed := false
+	for _, a := range defaultAllowedPaths {
+		if clean == a || strings.HasPrefix(clean, a+"/") || strings.HasPrefix(clean, a+`\`) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed && (clean == tempDir || strings.HasPrefix(clean, tempDir+"/") || strings.HasPrefix(clean, tempDir+`\`)) {
+		allowed = true
+	}
+	if !allowed {
+		return "", fmt.Errorf("path %s is outside allowed directories (%v)", clean, defaultAllowedPaths)
 	}
 
 	// If file exists or symlink exists, verify target

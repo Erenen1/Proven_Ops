@@ -1,18 +1,29 @@
-.PHONY: help dev up down proto test-go test-py test lint build-agent run-agent
+.PHONY: help build test test-unit test-race test-go test-py lab-up lab-down validate-production clean
 
 help:
-	@echo "OpsPilot Development Makefile"
-	@echo "  make dev         - Start central stack (Postgres, Control Plane, AI Service, Dashboard)"
-	@echo "  make down        - Tear down all containers"
-	@echo "  make proto       - Compile protobuf definitions for Go and Python"
-	@echo "  make test        - Run all tests across Go, Python, and Dashboard"
-	@echo "  make build-agent - Compile the Server Agent for Linux amd64"
+	@echo "ProvenOps Makefile Targets:"
+	@echo "  make build               - Compile Control Plane and Agent binaries"
+	@echo "  make test                - Run all unit tests across Go, Python, and Dashboard"
+	@echo "  make test-unit           - Run Go and Python unit tests"
+	@echo "  make test-race           - Run Go tests with race detector enabled"
+	@echo "  make lab-up              - Launch complete 5-node Docker lab environment"
+	@echo "  make lab-down            - Stop and tear down the Docker lab environment"
+	@echo "  make validate-production - Run the empirical production validation suite"
+	@echo "  make clean               - Remove build artifacts and temporary files"
 
-dev:
-	docker compose up --build -d
+build:
+	mkdir -p bin
+	cd apps/control-plane && go build -ldflags="-s -w" -o ../../bin/control-plane ./cmd/server
+	cd agent && go build -ldflags="-s -w" -o ../bin/provenops-agent ./cmd/agent
 
-down:
-	docker compose down
+test-unit:
+	cd apps/control-plane && go test -v -count=1 ./...
+	cd agent && go test -v -count=1 ./...
+	cd apps/ai-service && pytest
+
+test-race:
+	cd apps/control-plane && go test -v -race ./...
+	cd agent && go test -v -race ./...
 
 test-go:
 	cd apps/control-plane && go test -v ./...
@@ -21,7 +32,16 @@ test-go:
 test-py:
 	cd apps/ai-service && pytest
 
-test: test-go test-py
+test: test-unit
 
-build-agent:
-	cd agent && GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../bin/opspilot-agent ./cmd/agent
+lab-up:
+	docker compose --profile lab up --build -d
+
+lab-down:
+	docker compose --profile lab down -v --remove-orphans
+
+validate-production:
+	python scripts/validate_production.py
+
+clean:
+	rm -rf bin/ dist/ apps/dashboard/dist/

@@ -112,6 +112,23 @@ const (
 	RiskForbidden RiskLevel = "FORBIDDEN"
 )
 
+// IsRiskAllowed returns true if risk is within maxRisk threshold
+func IsRiskAllowed(risk, maxRisk RiskLevel) bool {
+	order := map[RiskLevel]int{
+		RiskReadOnly:  0,
+		RiskLow:       1,
+		RiskMedium:    2,
+		RiskHigh:      3,
+		RiskForbidden: 4,
+	}
+	rVal, ok1 := order[risk]
+	mVal, ok2 := order[maxRisk]
+	if !ok1 || !ok2 {
+		return false
+	}
+	return rVal <= mVal
+}
+
 type User struct {
 	ID           string    `json:"id"`
 	Username     string    `json:"username"`

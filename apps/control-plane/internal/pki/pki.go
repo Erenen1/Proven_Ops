@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -76,6 +77,43 @@ func GenerateCA(commonName string) (*CertificateAuthority, error) {
 		Cert:    parsedCert,
 		CertPEM: certPEM,
 		Key:     priv,
+		KeyPEM:  keyPEM,
+	}, nil
+}
+
+// LoadCA loads an existing CA cert and private key from files
+func LoadCA(certPath, keyPath string) (*CertificateAuthority, error) {
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA cert file: %w", err)
+	}
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA key file: %w", err)
+	}
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode CA cert PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA cert: %w", err)
+	}
+
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return nil, fmt.Errorf("failed to decode CA key PEM")
+	}
+	privKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA key: %w", err)
+	}
+
+	return &CertificateAuthority{
+		Cert:    cert,
+		CertPEM: certPEM,
+		Key:     privKey,
 		KeyPEM:  keyPEM,
 	}, nil
 }
@@ -189,8 +227,8 @@ func SavePEM(path string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(path, data, perm)
 }
 
-// ServerTLSConfig creates a TLS config enforcing mutual TLS
-func ServerTLSConfig(caPEM, serverCertPEM, serverKeyPEM []byte) (*tls.Config, error) {
+// ServerTLSConfig creates a TLS config enforcing mutual TLS with optional CRL checking
+func ServerTLSConfig(caPEM, serverCertPEM, serverKeyPEM []byte, checker RevocationChecker) (*tls.Config, error) {
 	serverCert, err := tls.X509KeyPair(serverCertPEM, serverKeyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server key pair: %w", err)
@@ -201,12 +239,30 @@ func ServerTLSConfig(caPEM, serverCertPEM, serverKeyPEM []byte) (*tls.Config, er
 		return nil, fmt.Errorf("failed to parse CA certificate PEM")
 	}
 
-	return &tls.Config{
+	cfg := &tls.Config{
 		Certificates: []tls.Certificate{serverCert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    certPool,
 		MinVersion:   tls.VersionTLS13,
-	}, nil
+	}
+
+	if checker != nil {
+		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+				return nil
+			}
+			peerCert := verifiedChains[0][0]
+			serialDec := peerCert.SerialNumber.String()
+			serialHexUpper := strings.ToUpper(peerCert.SerialNumber.Text(16))
+			serialHexLower := strings.ToLower(peerCert.SerialNumber.Text(16))
+			if checker.IsRevoked(serialDec) || checker.IsRevoked(serialHexUpper) || checker.IsRevoked(serialHexLower) {
+				return fmt.Errorf("client certificate with serial %s is revoked", serialHexUpper)
+			}
+			return nil
+		}
+	}
+
+	return cfg, nil
 }
 
 // ClientTLSConfig creates a TLS config for the Agent to authenticate with the server
@@ -357,9 +413,25 @@ func RenewAgentCertificate(ca *CertificateAuthority, existingCertPEM []byte, dur
 	return IssueAgentCertificate(ca, cert.Subject.CommonName, hostname, duration)
 }
 
-// RevocationChecker checks if a given certificate serial number is revoked
+// RevocationChecker verifies whether a certificate serial is in the CRL
 type RevocationChecker interface {
-	IsRevoked(serial string) bool
+	IsRevoked(serialNumber string) bool
+}
+
+// StoreRevocationChecker adapts a database callback to RevocationChecker
+type StoreRevocationChecker struct {
+	IsRevokedFunc func(serial string) (bool, error)
+}
+
+func (s *StoreRevocationChecker) IsRevoked(serial string) bool {
+	if s.IsRevokedFunc == nil {
+		return false
+	}
+	revoked, err := s.IsRevokedFunc(serial)
+	if err != nil {
+		return false
+	}
+	return revoked
 }
 
 // ValidateCertificateWithRevocation checks signature, validity period, and revocation status
@@ -369,8 +441,13 @@ func ValidateCertificateWithRevocation(certPEM, caPEM []byte, checker Revocation
 		return nil, err
 	}
 
-	if checker != nil && checker.IsRevoked(cert.SerialNumber.String()) {
-		return nil, fmt.Errorf("certificate with serial %s is revoked", cert.SerialNumber.String())
+	if checker != nil {
+		serialDec := cert.SerialNumber.String()
+		serialHexUpper := strings.ToUpper(cert.SerialNumber.Text(16))
+		serialHexLower := strings.ToLower(cert.SerialNumber.Text(16))
+		if checker.IsRevoked(serialDec) || checker.IsRevoked(serialHexUpper) || checker.IsRevoked(serialHexLower) {
+			return nil, fmt.Errorf("certificate with serial %s is revoked", serialHexUpper)
+		}
 	}
 
 	return cert, nil

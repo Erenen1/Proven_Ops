@@ -1,7 +1,7 @@
-# OpsPilot Failure & Recovery Model
+# ProvenOps Failure & Recovery Model
 
 ## 1. Failure Philosophy
-In distributed infrastructure operations, failures are inevitable: network partitions occur, services encounter port collisions, agents crash, and host machines restart. OpsPilot guarantees that no failure leaves the infrastructure in an undefined, unverified, or corrupted state.
+In distributed infrastructure operations, failures are inevitable: network partitions occur, services encounter port collisions, agents crash, and host machines restart. ProvenOps guarantees that no failure leaves the infrastructure in an undefined, unverified, or corrupted state.
 
 ---
 
@@ -32,7 +32,7 @@ Every execution failure is categorized into one of 7 deterministic error classes
        ▼
 [ Agent Restarts & Reconnects ]
        │
-  1. Reads local bbolt ledger (/var/lib/opspilot/execution_ledger.db)
+  1. Reads local bbolt ledger (/var/lib/provenops/execution_ledger.db)
   2. Any in-flight RUNNING records converted to UNKNOWN
   3. Control Plane initiates reconciliation handshake:
      - If step succeeded before crash: cached result returned (Idempotent)

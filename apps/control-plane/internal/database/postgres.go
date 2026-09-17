@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"opspilot/control-plane/internal/models"
+	"opspilot/control-plane/internal/security"
 )
 
 type PostgresStore struct {
@@ -601,7 +602,13 @@ func (s *PostgresStore) SaveAuditEvent(ctx context.Context, event *models.AuditE
 		}
 	}
 
-	detailsJSON, _ := json.Marshal(event.Details)
+	var detailsJSON []byte
+	if event.Details != nil {
+		redacted := security.RedactMap(event.Details)
+		detailsJSON, _ = json.Marshal(redacted)
+	} else {
+		detailsJSON = []byte("{}")
+	}
 	now := time.Now()
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = now
@@ -937,3 +944,66 @@ func (s *PostgresStore) ListAIInvocations(ctx context.Context, taskID string) ([
 	}
 	return list, nil
 }
+
+// -------------------------------------------------------------
+// PKI BOOTSTRAP TOKENS & CERTIFICATE REVOCATION (CRL)
+// -------------------------------------------------------------
+
+func (s *PostgresStore) SaveBootstrapToken(ctx context.Context, tokenHash, description string, expiresAt time.Time) error {
+	query := `
+		INSERT INTO bootstrap_tokens (token_hash, description, expires_at, used, created_at)
+		VALUES ($1, $2, $3, false, NOW())
+		ON CONFLICT (token_hash) DO UPDATE SET
+			expires_at = EXCLUDED.expires_at,
+			description = EXCLUDED.description,
+			used = false,
+			used_at = NULL,
+			used_by_agent_id = NULL`
+	_, err := s.pool.Exec(ctx, query, tokenHash, description, expiresAt)
+	return err
+}
+
+func (s *PostgresStore) ConsumeBootstrapToken(ctx context.Context, tokenHash, agentID string) (bool, error) {
+	// First check if token exists and inspect status
+	var used bool
+	var expiresAt time.Time
+	err := s.pool.QueryRow(ctx, `SELECT used, expires_at FROM bootstrap_tokens WHERE token_hash = $1`, tokenHash).Scan(&used, &expiresAt)
+	if err != nil {
+		// Not found
+		return false, nil
+	}
+	if used {
+		return false, fmt.Errorf("bootstrap token already consumed")
+	}
+	if time.Now().After(expiresAt) {
+		return false, fmt.Errorf("bootstrap token expired")
+	}
+
+	// Atomically consume
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE bootstrap_tokens
+		SET used = true, used_at = NOW(), used_by_agent_id = $2
+		WHERE token_hash = $1 AND used = false`, tokenHash, agentID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *PostgresStore) RevokeCertificate(ctx context.Context, serial, agentID, reason string) error {
+	query := `
+		INSERT INTO revoked_certificates (serial, agent_id, revoked_at, reason)
+		VALUES ($1, $2, NOW(), $3)
+		ON CONFLICT (serial) DO UPDATE SET
+			reason = EXCLUDED.reason,
+			revoked_at = NOW()`
+	_, err := s.pool.Exec(ctx, query, serial, agentID, reason)
+	return err
+}
+
+func (s *PostgresStore) IsCertificateRevoked(ctx context.Context, serial string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM revoked_certificates WHERE serial = $1)`, serial).Scan(&exists)
+	return exists, err
+}
+

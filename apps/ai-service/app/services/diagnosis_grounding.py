@@ -51,7 +51,7 @@ EVIDENCE_PATTERNS: List[Tuple[RootCause, re.Pattern, str]] = [
     (
         RootCause.POLICY_DENIED,
         re.compile(r"(policy denied|security policy violation|forbidden action|blocked by policy|not permitted by rbac)", re.IGNORECASE),
-        "Operation violated OpsPilot security guardrails or RBAC policy"
+        "Operation violated ProvenOps security guardrails or RBAC policy"
     ),
     (
         RootCause.CONTAINER_CRASH,

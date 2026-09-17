@@ -24,9 +24,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-service")
 
 app = FastAPI(
-    title="OpsPilot AI Service",
+    title="ProvenOps AI Service",
     version="1.0.0",
-    description="Deterministic AI Planning & Reasoning microservice for OpsPilot"
+    description="Deterministic AI Planning & Reasoning microservice for ProvenOps"
 )
 
 app.add_middleware(
@@ -73,6 +73,18 @@ async def health_check():
         "model": settings.DEFAULT_LLM_MODEL,
         "ollama_base_url": settings.OLLAMA_BASE_URL
     }
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok", "service": "ai-service"}
+
+@app.get("/readyz")
+async def readyz():
+    try:
+        digest = await provider.get_model_digest()
+        return {"status": "ready", "model": provider.model_name, "digest": digest}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"LLM backend not ready: {str(e)}")
 
 @app.get("/api/v1/config")
 async def get_config():

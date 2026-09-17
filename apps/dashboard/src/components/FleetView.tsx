@@ -27,7 +27,7 @@ export const FleetView: React.FC<FleetViewProps> = ({ agents }) => {
           <Server className="w-12 h-12 text-slate-600 mx-auto mb-3" />
           <h3 className="text-sm font-semibold text-slate-300">No Agents Enrolled</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-            Install the OpsPilot Server Agent on your Ubuntu server using the bootstrap token.
+            Install the ProvenOps Server Agent on your Ubuntu server using the bootstrap token.
           </p>
           <code className="mt-4 inline-block px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-blue-400">
             curl -sSL http://&lt;control-plane&gt;:8080/scripts/install-agent.sh | sudo bash

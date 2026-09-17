@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"opspilot/control-plane/internal/models"
+	"opspilot/control-plane/internal/security"
 )
 
 type Hub struct {
@@ -24,11 +25,16 @@ func NewHub() *Hub {
 }
 
 func (h *Hub) Publish(taskID, eventType string, payload map[string]any) {
+	redactedPayload := payload
+	if payload != nil {
+		redactedPayload = security.RedactMap(payload)
+	}
+
 	event := &models.TaskEvent{
 		ID:        time.Now().UnixNano(),
 		TaskID:    taskID,
 		EventType: eventType,
-		Payload:   payload,
+		Payload:   redactedPayload,
 		CreatedAt: time.Now(),
 	}
 

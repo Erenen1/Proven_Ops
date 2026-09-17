@@ -1,7 +1,7 @@
-# OpsPilot Threat Model & Trust Boundaries
+# ProvenOps Threat Model & Trust Boundaries
 
 ## 1. Executive Security Philosophy
-OpsPilot enforces a strict **Zero-Blind-Trust** security architecture. Large Language Models (LLMs) are treated as **untrusted, probabilistic planners**. They never possess direct shell execution privileges, network access to production nodes, or credential authority.
+ProvenOps enforces a strict **Zero-Blind-Trust** security architecture. Large Language Models (LLMs) are treated as **untrusted, probabilistic planners**. They never possess direct shell execution privileges, network access to production nodes, or credential authority.
 
 ---
 
@@ -52,12 +52,11 @@ OpsPilot enforces a strict **Zero-Blind-Trust** security architecture. Large Lan
 * **Mitigation:**
   1. `ValidateFilesystemPath` resolves canonical paths and evaluates symlink targets with `filepath.EvalSymlinks`.
   2. Protected system roots (`/proc`, `/sys`, `/dev`, `/boot`, `/etc/shadow`, `/etc/sudoers`) are strictly blocked.
-  3. Atomic file swap (`.opspilot_tmp_*` -> `fsync` -> `rename`) prevents TOCTOU race conditions.
+  3. Atomic file swap (`.provenops_tmp_*` -> `fsync` -> `rename`) prevents TOCTOU race conditions.
 
 ### 3.4 Compromised Agent or Rogue Client
 * **Threat:** Rogue machine attempting to impersonate an agent or spoof commands.
 * **Mitigation:**
-  1. Mutual TLS (mTLS) with ECDSA P-256 client certificates signed by internal OpsPilot Root CA.
   2. Certificate Identity Binding: Common Name (`CN=agent:<id>`) is validated against registered agent ID.
   3. Certificate Revocation List (CRL): Revoked certificate serial numbers are immediately rejected at connection time.
   4. Single-use, time-bound bootstrap tokens with replay protection.

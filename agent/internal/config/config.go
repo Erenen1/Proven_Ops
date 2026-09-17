@@ -20,39 +20,50 @@ type Config struct {
 	TLSServerName        string
 }
 
+func getEnv(keys ...string) string {
+	for _, k := range keys {
+		if val := os.Getenv(k); val != "" {
+			return val
+		}
+	}
+	return ""
+}
+
 func Load() *Config {
-	addr := os.Getenv("AGENT_CONTROL_PLANE_ADDR")
+	addr := getEnv("PROVENOPS_CONTROL_PLANE_ADDR", "OPSPILOT_CONTROL_PLANE_ADDR", "AGENT_CONTROL_PLANE_ADDR")
 	if addr == "" {
 		addr = "localhost:9090"
 	}
 
-	token := os.Getenv("AGENT_BOOTSTRAP_TOKEN")
+	token := getEnv("PROVENOPS_BOOTSTRAP_TOKEN", "OPSPILOT_BOOTSTRAP_TOKEN", "AGENT_BOOTSTRAP_TOKEN")
 	if token == "" {
 		token = "opspilot-default-bootstrap-token-2026"
 	}
 
 	hbInterval := 5
-	if val, err := strconv.Atoi(os.Getenv("AGENT_HEARTBEAT_INTERVAL_SEC")); err == nil && val > 0 {
+	if val, err := strconv.Atoi(getEnv("PROVENOPS_HEARTBEAT_INTERVAL_SEC", "OPSPILOT_HEARTBEAT_INTERVAL_SEC", "AGENT_HEARTBEAT_INTERVAL_SEC")); err == nil && val > 0 {
 		hbInterval = val
 	}
 
-	env := os.Getenv("AGENT_ENVIRONMENT")
+	env := getEnv("PROVENOPS_ENVIRONMENT", "OPSPILOT_ENVIRONMENT", "AGENT_ENVIRONMENT")
 	if env == "" {
 		env = "development"
 	}
 
 	hostname, _ := os.Hostname()
-	if h := os.Getenv("AGENT_HOSTNAME"); h != "" {
+	if h := getEnv("PROVENOPS_HOSTNAME", "OPSPILOT_HOSTNAME", "AGENT_HOSTNAME"); h != "" {
 		hostname = h
 	}
 
-	workingDir := os.Getenv("AGENT_WORKING_DIR")
+	workingDir := getEnv("PROVENOPS_WORKING_DIR", "OPSPILOT_WORKING_DIR", "AGENT_WORKING_DIR")
 	if workingDir == "" {
-		workingDir = "/tmp/opspilot"
+		workingDir = "/tmp/provenops"
 	}
 
-	tlsEnabled := os.Getenv("TLS_ENABLED") == "true" || os.Getenv("TLS_ENABLED") == "1"
-	serverName := os.Getenv("TLS_SERVER_NAME")
+	tlsVal := getEnv("PROVENOPS_TLS_ENABLED", "OPSPILOT_TLS_ENABLED", "TLS_ENABLED")
+	tlsEnabled := tlsVal == "true" || tlsVal == "1"
+
+	serverName := getEnv("PROVENOPS_TLS_SERVER_NAME", "OPSPILOT_TLS_SERVER_NAME", "TLS_SERVER_NAME")
 	if serverName == "" {
 		serverName = "localhost"
 	}
@@ -65,9 +76,9 @@ func Load() *Config {
 		Hostname:             hostname,
 		WorkingDir:           workingDir,
 		TLSEnabled:           tlsEnabled,
-		TLSCACert:            os.Getenv("TLS_CA_CERT"),
-		TLSClientCert:        os.Getenv("TLS_CLIENT_CERT"),
-		TLSClientKey:         os.Getenv("TLS_CLIENT_KEY"),
+		TLSCACert:            getEnv("PROVENOPS_TLS_CA_CERT", "OPSPILOT_TLS_CA_CERT", "TLS_CA_CERT"),
+		TLSClientCert:        getEnv("PROVENOPS_TLS_CLIENT_CERT", "OPSPILOT_TLS_CLIENT_CERT", "TLS_CLIENT_CERT"),
+		TLSClientKey:         getEnv("PROVENOPS_TLS_CLIENT_KEY", "OPSPILOT_TLS_CLIENT_KEY", "TLS_CLIENT_KEY"),
 		TLSServerName:        serverName,
 	}
 }

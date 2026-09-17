@@ -15,6 +15,9 @@ FROM alpine:3.20
 RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
+RUN mkdir -p /etc/provenops/certs /etc/opspilot && \
+    ln -s /etc/provenops/certs /etc/opspilot/certs
+
 COPY --from=builder /bin/control-plane /app/control-plane
 
 EXPOSE 8080 9090

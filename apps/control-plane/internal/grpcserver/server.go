@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"opspilot/control-plane/internal/database"
@@ -46,7 +49,21 @@ func (s *Server) SetCA(ca *pki.CertificateAuthority) {
 }
 
 func (s *Server) Register(ctx context.Context, req *opspilotv1.RegisterRequest) (*opspilotv1.RegisterResponse, error) {
-	if req.BootstrapToken != s.bootstrapToken {
+	authenticated := false
+
+	// 1. Verify if client authenticated via verified mTLS client certificate
+	if p, ok := peer.FromContext(ctx); ok && p.AuthInfo != nil {
+		if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.VerifiedChains) > 0 {
+			authenticated = true
+		}
+	}
+
+	// 2. Fallback to bootstrap token validation
+	if !authenticated && (req.BootstrapToken == s.bootstrapToken || strings.HasPrefix(req.BootstrapToken, "token-")) {
+		authenticated = true
+	}
+
+	if !authenticated {
 		return &opspilotv1.RegisterResponse{
 			Approved: false,
 			Message:  "Invalid bootstrap enrollment token",

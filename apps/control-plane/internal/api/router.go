@@ -93,6 +93,9 @@ func NewRouterWithPKI(
 	}))
 
 	r.Get("/health", h.handleHealth)
+	r.Get("/healthz", h.handleHealthz)
+	r.Get("/readyz", h.handleReadyz)
+	r.Get("/metrics", h.handleMetrics)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/login", h.handleLogin)
@@ -108,6 +111,7 @@ func NewRouterWithPKI(
 		r.Get("/tasks/{id}", h.handleGetTask)
 		r.Post("/tasks/{id}/approve", h.handleApproveTask)
 		r.Post("/tasks/{id}/reject", h.handleRejectTask)
+		r.Post("/tasks/{id}/cancel", h.handleCancelTask)
 		r.Get("/tasks/{id}/events", h.handleTaskSSE)
 
 		// Global Events SSE
@@ -126,6 +130,7 @@ func NewRouterWithPKI(
 		// PKI & Certificate Lifecycle
 		r.Post("/pki/enroll", h.handlePKIEnroll)
 		r.Post("/pki/renew", h.handlePKIRenew)
+		r.Post("/pki/revoke", h.handlePKIRevoke)
 		r.Get("/pki/ca", h.handlePKIGetCA)
 	})
 
@@ -135,9 +140,69 @@ func NewRouterWithPKI(
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, map[string]string{
 		"status":    "healthy",
-		"service":   "opspilot-control-plane",
+		"service":   "provenops-control-plane",
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
+}
+
+func (h *Handler) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	jsonResponse(w, http.StatusOK, map[string]string{
+		"status":    "healthy",
+		"service":   "provenops-control-plane",
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if h.store != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if _, err := h.store.ListAgents(ctx); err != nil {
+			jsonError(w, http.StatusServiceUnavailable, fmt.Sprintf("database dependency unhealthy: %v", err))
+			return
+		}
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{
+		"status":    "ready",
+		"database":  "connected",
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	tasks, _ := h.store.ListTasks(r.Context())
+	agents, _ := h.store.ListAgents(r.Context())
+
+	totalTasks := len(tasks)
+	failedTasks := 0
+	for _, t := range tasks {
+		if t.Status == "FAILED" {
+			failedTasks++
+		}
+	}
+
+	onlineAgents := 0
+	offlineAgents := 0
+	for _, a := range agents {
+		if a.Status == "online" {
+			onlineAgents++
+		} else {
+			offlineAgents++
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	// Canonical ProvenOps metrics
+	fmt.Fprintf(w, "# HELP provenops_tasks_total Total tasks created\n# TYPE provenops_tasks_total counter\nprovenops_tasks_total %d\n", totalTasks)
+	fmt.Fprintf(w, "# HELP provenops_tasks_failed_total Total failed tasks\n# TYPE provenops_tasks_failed_total counter\nprovenops_tasks_failed_total %d\n", failedTasks)
+	fmt.Fprintf(w, "# HELP provenops_agents_online Number of agents online\n# TYPE provenops_agents_online gauge\nprovenops_agents_online %d\n", onlineAgents)
+	fmt.Fprintf(w, "# HELP provenops_agents_offline Number of agents offline\n# TYPE provenops_agents_offline gauge\nprovenops_agents_offline %d\n", offlineAgents)
+
+	// Legacy backward-compatibility metrics aliases
+	fmt.Fprintf(w, "opspilot_tasks_total %d\n", totalTasks)
+	fmt.Fprintf(w, "opspilot_tasks_failed_total %d\n", failedTasks)
+	fmt.Fprintf(w, "opspilot_agents_online %d\n", onlineAgents)
+	fmt.Fprintf(w, "opspilot_agents_offline %d\n", offlineAgents)
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -623,11 +688,6 @@ func (h *Handler) handlePKIEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.BootstrapToken != h.bootstrapToken {
-		jsonError(w, http.StatusUnauthorized, "invalid bootstrap token")
-		return
-	}
-
 	agentID := req.AgentID
 	if agentID == "" {
 		if req.Hostname != "" {
@@ -635,6 +695,23 @@ func (h *Handler) handlePKIEnroll(w http.ResponseWriter, r *http.Request) {
 		} else {
 			agentID = fmt.Sprintf("agent-%s", uuid.New().String()[:8])
 		}
+	}
+
+	if h.store != nil {
+		valid, err := h.store.ConsumeBootstrapToken(r.Context(), req.BootstrapToken, agentID)
+		if err != nil {
+			jsonError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		if !valid {
+			if req.BootstrapToken != h.bootstrapToken {
+				jsonError(w, http.StatusUnauthorized, "invalid or unapproved bootstrap token")
+				return
+			}
+		}
+	} else if req.BootstrapToken != h.bootstrapToken {
+		jsonError(w, http.StatusUnauthorized, "invalid bootstrap token")
+		return
 	}
 
 	ca, err := h.getOrCreateCA()
@@ -662,6 +739,7 @@ func (h *Handler) handlePKIEnroll(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handlePKIRenew(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ClientCertPEM string `json:"client_cert_pem"`
+		Hostname      string `json:"hostname"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request payload")
@@ -676,7 +754,7 @@ func (h *Handler) handlePKIRenew(w http.ResponseWriter, r *http.Request) {
 
 	renewedPair, err := pki.RenewAgentCertificate(ca, []byte(req.ClientCertPEM), 90*24*time.Hour)
 	if err != nil {
-		jsonError(w, http.StatusBadRequest, fmt.Sprintf("certificate renewal failed: %v", err))
+		jsonError(w, http.StatusBadRequest, fmt.Sprintf("failed to renew certificate: %v", err))
 		return
 	}
 
@@ -687,6 +765,60 @@ func (h *Handler) handlePKIRenew(w http.ResponseWriter, r *http.Request) {
 		"client_key_pem":  string(renewedPair.KeyPEM),
 		"ca_cert_pem":     string(ca.CertPEM),
 		"expires_at":      renewedPair.Cert.NotAfter.Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) handlePKIRevoke(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Serial  string `json:"serial"`
+		AgentID string `json:"agent_id"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	if req.Serial == "" {
+		jsonError(w, http.StatusBadRequest, "serial number required")
+		return
+	}
+	if req.Reason == "" {
+		req.Reason = "revocation by operator"
+	}
+	if err := h.store.RevokeCertificate(r.Context(), req.Serial, req.AgentID, req.Reason); err != nil {
+		jsonError(w, http.StatusInternalServerError, fmt.Sprintf("failed to revoke certificate: %v", err))
+		return
+	}
+	h.hub.Publish("", "CERTIFICATE_REVOKED", map[string]any{
+		"serial":   req.Serial,
+		"agent_id": req.AgentID,
+		"reason":   req.Reason,
+	})
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"revoked": true,
+		"serial":  req.Serial,
+	})
+}
+
+func (h *Handler) handleCancelTask(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "id")
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.Reason == "" {
+		req.Reason = "Cancelled by operator"
+	}
+
+	if err := h.orchestrator.CancelTask(r.Context(), taskID, req.Reason); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"task_id": taskID,
+		"status":  "CANCELLED",
+		"reason":  req.Reason,
 	})
 }
 

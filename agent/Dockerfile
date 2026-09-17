@@ -11,7 +11,7 @@ COPY agent/ agent/
 
 WORKDIR /workspace/agent
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/opspilot-agent ./cmd/agent/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/provenops-agent ./cmd/agent/main.go
 
 # Stage 2: Realistic Ubuntu 22.04 Linux Host Environment
 FROM ubuntu:22.04
@@ -28,12 +28,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     && rm -rf /var/lib/apt/lists/*
 
-# Setup OpsPilot directories
-RUN mkdir -p /var/lib/opspilot/backups /var/lib/opspilot/certs /var/log/opspilot && \
-    chmod 750 /var/lib/opspilot
+# Setup ProvenOps directories and backward-compatible symlinks
+RUN mkdir -p /var/lib/provenops/backups /var/lib/provenops/certs /var/log/provenops && \
+    chmod 750 /var/lib/provenops && \
+    ln -s /var/lib/provenops /var/lib/opspilot && \
+    ln -s /var/log/provenops /var/log/opspilot
 
-COPY --from=builder /bin/opspilot-agent /usr/local/bin/opspilot-agent
+COPY --from=builder /bin/provenops-agent /usr/local/bin/provenops-agent
+RUN ln -s /usr/local/bin/provenops-agent /usr/local/bin/opspilot-agent
 
 EXPOSE 80 443
 
-ENTRYPOINT ["/usr/local/bin/opspilot-agent"]
+ENTRYPOINT ["/usr/local/bin/provenops-agent"]

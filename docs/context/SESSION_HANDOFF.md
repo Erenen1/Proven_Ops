@@ -1,78 +1,56 @@
-# Session Handoff
+# Session Handoff — ProvenOps
 
-Last Updated: 2026-09-16 14:15
+Last Updated: 2026-09-17
 
 ## Status
-COMPLETE (PRODUCTION-GRADE INFRASTRUCTURE ORCHESTRATION PLATFORM HARDENING FULLY IMPLEMENTED AND VERIFIED)
+COMPLETE (PRODUCTION-READY FOR DEFINED SCOPE & RELEASE-HARDENED)
 
 ## Session Goal
-Transform OpsPilot from prototype/demo tier into a production-grade infrastructure operations platform across 44 explicit engineering and security requirements, preserving architectural invariants (Go Control Plane, Go Agent, Python/FastAPI AI Service, React/TS Dashboard, PostgreSQL 16, gRPC + mTLS, Docker Compose).
+Complete final production hardening for public release, rename OpsPilot to **ProvenOps**, close all production readiness gaps, synchronize documentation with ground-truth code, author a professional GitHub README, run fresh multi-node Docker reproduction tests, and execute a safe commit + push to the remote branch.
 
 ## What Was Done
-1. **Durable 16-State State Machine & Optimistic Locking (`internal/statemachine`, `internal/models`)**:
-   - Implemented standard 16-state execution lifecycle: `PENDING`, `PRECHECKING`, `SKIPPED`, `WAITING_APPROVAL`, `QUEUED`, `DISPATCHED`, `RUNNING`, `VERIFYING`, `SUCCEEDED`, `FAILED`, `RETRYING`, `COMPENSATING`, `COMPENSATED`, `PARTIALLY_COMPENSATED`, `MANUAL_INTERVENTION_REQUIRED`, `CANCELLED`.
-   - Concurrency control enforced via `optimistic_lock_version` increments on every transition to prevent race conditions during crash recovery or distributed dispatch.
-   - Comprehensive test suite in `statemachine_test.go` (100% pass, tested with `-race`).
+1. **Repository Audit & Secret Scan**:
+   - Audited git branch (`feat/ai-provenance`), tracked files, and remote `origin`.
+   - Verified no credentials, private keys, or `.env` files are tracked (only `.env.example`).
+   - Hardened `.gitignore`.
 
-2. **Idempotency & Desired-State Reconciliation (`agent/internal/tools/ensure_tools.go`)**:
-   - Built desired-state tools: `ensure_package`, `ensure_service`, `ensure_file`, `ensure_directory`, and `ensure_port_state`.
-   - Added pre-flight check semantics: operations already satisfying target state return `SKIPPED_ALREADY_DESIRED` without destructive mutations.
-   - Atomic file operations: temporary file staging (`.opspilot_tmp_*`), `fsync`, and atomic rename with automatic pre-flight snapshotting.
-   - Path traversal and sensitive system directory validation (`ValidateFilesystemPath`).
-   - Unit tests in `ensure_tools_test.go` (100% pass).
+2. **Canonical Renaming (OpsPilot → ProvenOps)**:
+   - Updated public naming, API metadata, and service descriptions to **ProvenOps**.
+   - Preserved backward compatibility: environment variables evaluate `PROVENOPS_* > OPSPILOT_* > generic`.
+   - Metric prefix updated to `provenops_*` with backward-compatible `opspilot_*` aliases.
+   - Filesystem paths use `/var/lib/provenops` and `/etc/provenops/certs` with transparent backward-compatible symlinks to `/var/lib/opspilot` and `/etc/opspilot/certs`.
+   - Docker container names updated to `provenops-*` with network aliases preserving existing service resolution.
+   - Internal Go module path `opspilot/...` preserved to avoid unnecessary import churn.
 
-3. **DAG Execution Engine (`internal/dag`)**:
-   - Dependency-aware DAG resolution supporting parallel node batches.
-   - Cycle detection via Kahn's algorithm rejecting invalid cyclic dependency graphs.
-   - Failure propagation marking downstream steps as `BLOCKED_BY_DEPENDENCY`.
-   - Unit tests in `dag_test.go` (100% pass).
+3. **Docker & Multi-Node Lab Hardening**:
+   - `agent/Dockerfile`: Builds `/bin/provenops-agent` and creates symlinks for `/usr/local/bin/opspilot-agent`, `/var/lib/provenops`, `/var/log/provenops`.
+   - `apps/ai-service/Dockerfile`: Multi-stage hardening with non-root user `appuser`.
+   - `apps/control-plane/Dockerfile`: Added cert path symlinks and minimal runtime.
+   - `docker-compose.yml`: Fully updated with `name: provenops`, dual-stack environment variables, and network aliases.
 
-4. **Saga LIFO Compensation & Rollback Engine (`internal/saga`)**:
-   - Reversibility contract enforcement (`FULL`, `PARTIAL`, `NONE`).
-   - Automatic derivation of inverse actions (e.g. restore file snapshot, stop started service, remove installed package).
-   - Reverse LIFO execution for completed steps upon failure with strict post-compensation verification.
-   - Unit tests in `saga_test.go` (100% pass).
+4. **Makefile & Developer Workflows**:
+   - Standard targets: `make build`, `make test`, `make test-unit`, `make test-race`, `make lab-up`, `make lab-down`, `make validate-production`, `make clean`.
+   - `.github/workflows/ci.yml`: Added full Go race tests, Python tests, and Dashboard typecheck/build.
 
-5. **Deterministic Verification Contract System (`internal/verification`)**:
-   - Hard boundary: `EXECUTED != VERIFIED`.
-   - `VerifyContract` executing systemd checks, TCP socket probes, and HTTP health probes.
-   - Structured verification evidence with timestamp, check type, expected, actual, duration, and agent identity saved to PostgreSQL.
-   - Unit tests in `verifier_test.go` (100% pass).
+5. **Empirical Production Validation (15/15 Claims Verified)**:
+   - Live execution on fresh 5-node cluster confirmed:
+     1. `verification_contract` (VERIFIED)
+     2. `canary_blast_radius_halting` (VERIFIED)
+     3. `rolling_deployment_batch_enforcement` (VERIFIED)
+     4. `saga_lifo_rollback_compensation` (VERIFIED)
+     5. `dag_orchestration_and_cycle_rejection` (VERIFIED)
+     6. `retry_engine_and_timeout_enforcement` (VERIFIED)
+     7. `remediation_budget_enforcement` (VERIFIED)
+     8. `control_plane_restart_active_execution` (VERIFIED)
+     9. `agent_kill_ledger_reconciliation` (VERIFIED)
+     10. `network_partition_resilience` (VERIFIED)
+     11. `revoked_certificate_handshake_rejection` (VERIFIED)
+     12. `command_guard_pipeline_blocking` (VERIFIED)
+     13. `secret_redaction_in_logs_and_audit` (VERIFIED)
+     14. `docker_network_isolation` (VERIFIED)
+     15. `go_race_detector_concurrency` (VERIFIED)
+   - Stored in `artifacts/validation-report.json` and `artifacts/validation-report.md`.
 
-6. **Error Taxonomy & Jittered Exponential Backoff (`internal/failures`, `internal/orchestrator`)**:
-   - 7 standardized error classes: `TRANSIENT`, `PERMANENT`, `POLICY`, `VERIFICATION`, `CONNECTIVITY`, `TIMEOUT`, `UNKNOWN`.
-   - Fail-fast enforcement on `POLICY` and `PERMANENT` errors.
-   - Full jitter backoff formula (`base * 2^attempt ± 20%`) to prevent thundering herd.
-   - Unit tests in `failure_test.go` (100% pass).
-
-7. **Security, AST Guard & PKI Hardening (`agent/internal/executor`, `internal/pki`, `internal/security`)**:
-   - AST Command Guard hardened against subshells, shell pipes (`curl | sh`), `find -exec`, `xargs`, raw block device writes, and sensitive paths (`/etc/shadow`, `/boot`, `/sys`).
-   - Secret redaction layer (`RedactString`, `RedactJSON`) scrubbing private keys, JWTs, URI credentials, API keys, and sensitive JSON keys.
-   - PKI Certificate Revocation List (CRL) validation preventing execution from compromised or revoked agents.
-   - Single-use and time-bounded bootstrap tokens tracked in PostgreSQL.
-   - Unit tests in `command_guard_test.go`, `pki/mtls_test.go`, and `security/redactor_test.go` (100% pass).
-
-8. **Multi-Node Linux Lab Profile (`docker-compose.yml`, `agent/Dockerfile`)**:
-   - Multi-stage Linux agent Dockerfile (`golang:1.23-alpine` builder + `ubuntu:22.04` runtime).
-   - Docker Compose profile `lab` simulating 5 real Linux agent nodes (`node-01` to `node-05`) with system utilities (`nginx`, `procps`, `iproute2`, `net-tools`).
-   - Isolated Docker networks: `frontend-net`, `backend-net`, and `agent-net` preventing unauthorized direct database access.
-
-9. **Failure Injection & E2E Validation (`internal/orchestrator/failure_injection_test.go`)**:
-   - 10 automated failure injection test suites covering idempotency skips, transient retry recovery, permanent fail-fast, saga rollback, AST command blocking, DAG failure blocking, and CRL certificate rejections.
-   - Verified with Go race detector (`-race`).
-
-10. **Architecture & Operations Documentation**:
-    - Created `docs/THREAT_MODEL.md` detailing all 9 trust boundaries and threat vectors.
-    - Created `docs/FAILURE_MODEL.md` detailing 10 failure classes and recovery strategies.
-    - Created `docs/PRODUCTION_READINESS.md` detailing the operational production checklist.
-    - Updated `docs/context/CURRENT_STATE.md`.
-
-## Regression Verification
-- Go Control Plane unit tests: `go test ./...` in `apps/control-plane` -> All PASS (100%)
-- Go Agent unit tests: `go test ./...` in `agent` -> All PASS (100%)
-- Go Race Detector: `go test -race` across critical packages -> All PASS (0 data races)
-- AI Service unit tests: `pytest` in `apps/ai-service` -> 8/8 PASS (100%)
-- Dashboard Vite build: `npm run build` in `apps/dashboard` -> 0 errors, production bundle built
-
-## Resume Instructions
-New sessions should read `GEMINI.md`, then `docs/context/CURRENT_STATE.md` and `docs/context/SESSION_HANDOFF.md`. All production-readiness hardening milestones are fully completed and verified.
+6. **GitHub README & Documentation**:
+   - Rewrote `README.md` to high-grade infrastructure engineering standards with Mermaid architecture, core principles (`EXECUTED != VERIFIED`), capabilities, security model, and quick start.
+   - Synchronized `docs/PRODUCTION_READINESS.md`, `docs/THREAT_MODEL.md`, `docs/FAILURE_MODEL.md`, `GEMINI.md`.

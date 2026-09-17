@@ -10,8 +10,8 @@ var (
 	// Private key blocks
 	privateKeyRegex = regexp.MustCompile(`(?s)-----BEGIN[ A-Z0-9_-]*PRIVATE KEY-----.*?-----END[ A-Z0-9_-]*PRIVATE KEY-----`)
 
-	// JWT tokens (Bearer eyJ...)
-	jwtRegex = regexp.MustCompile(`Bearer\s+eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+`)
+	// JWT tokens (Bearer eyJ... or raw eyJ...)
+	jwtRegex = regexp.MustCompile(`(?:Bearer\s+)?\beyJ[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]+\b`)
 
 	// URI passwords: scheme://user:pass@host
 	uriPasswordRegex = regexp.MustCompile(`([a-zA-Z]+://[^:]+:)([^@]+)(@)`)
